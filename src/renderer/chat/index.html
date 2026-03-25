@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { overflow: hidden; background: transparent; width: 300px; height: 250px; font-family: monospace; }
+
+    #bubble {
+      width: 280px;
+      margin: 10px auto;
+      background: #1a1a2e;
+      border: 3px solid #fbbf24;
+      border-radius: 4px;
+      padding: 12px;
+      image-rendering: pixelated;
+      transition: opacity 0.5s;
+    }
+
+    /* Pixel-art speech bubble tail */
+    #bubble::after {
+      content: '';
+      position: absolute;
+      bottom: -8px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0; height: 0;
+      border-left: 8px solid transparent;
+      border-right: 8px solid transparent;
+      border-top: 8px solid #fbbf24;
+    }
+
+    #response-text {
+      color: #fbbf24;
+      font-size: 13px;
+      line-height: 1.4;
+      min-height: 40px;
+      max-height: 140px;
+      overflow-y: auto;
+      word-wrap: break-word;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+
+    #chat-input {
+      width: 100%;
+      margin-top: 8px;
+      padding: 6px 8px;
+      background: #0a0a1a;
+      border: 2px solid #fbbf24;
+      border-radius: 2px;
+      color: #fbbf24;
+      font-family: monospace;
+      font-size: 13px;
+      outline: none;
+    }
+
+    #chat-input::placeholder { color: #b47e14; }
+    #chat-input:focus { border-color: #fcd34d; }
+  </style>
+</head>
+<body>
+  <div id="bubble" style="position:relative;">
+    <div id="response-text">Click here and type to chat!</div>
+    <input id="chat-input" type="text" placeholder="Say something..." autofocus />
+  </div>
+  <script src="bubble.js"></script>
+  <script>init();</script>
+</body>
+</html>
