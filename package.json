@@ -1,6 +1,6 @@
 {
   "name": "jean-claude-duck",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Jean Claude Duck — AI-powered pixel-art rubber duck desktop pet",
   "main": "main.js",
   "scripts": {
