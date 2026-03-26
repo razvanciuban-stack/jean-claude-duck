@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jean Claude Duck — AI Desktop Pet for macOS</title>
+  <meta name="description" content="A pixel-art rubber duck that lives on your dock, chats with AI, reacts to what you do, and quacks when you get notifications.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 16 16' style='image-rendering:pixelated'%3E%3Crect x='4' y='2' width='4' height='1' fill='%23fbbf24'/%3E%3Crect x='3' y='3' width='6' height='3' fill='%23fbbf24'/%3E%3Crect x='4' y='6' width='5' height='1' fill='%23fbbf24'/%3E%3Crect x='1' y='4' width='2' height='1' fill='%23ef4444'/%3E%3Crect x='0' y='5' width='3' height='1' fill='%23dc2626'/%3E%3Crect x='1' y='6' width='2' height='1' fill='%23ef4444'/%3E%3Crect x='5' y='3' width='2' height='1' fill='white'/%3E%3Crect x='6' y='3' width='1' height='1' fill='black'/%3E%3Crect x='3' y='7' width='10' height='1' fill='%23fbbf24'/%3E%3Crect x='2' y='8' width='12' height='1' fill='%23fbbf24'/%3E%3Crect x='1' y='9' width='13' height='3' fill='%23fbbf24'/%3E%3Crect x='2' y='12' width='12' height='1' fill='%23fbbf24'/%3E%3Crect x='3' y='13' width='10' height='1' fill='%23fbbf24'/%3E%3Crect x='4' y='14' width='8' height='1' fill='%23f59e0b'/%3E%3C/svg%3E">
+  <style>
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg: #0a0a1a;
+      --bg-card: #1a1a2e;
+      --gold: #fbbf24;
+      --gold-light: #fcd34d;
+      --gold-dim: #f59e0b;
+      --text: #e2e8f0;
+      --text-dim: #94a3b8;
+      --border: #2a2a4a;
+      --red: #ef4444;
+      --pixel-border: 3px;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      overflow-x: hidden;
+    }
+
+    /* ---- Pixel grid background ---- */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.015) 1px, transparent 1px);
+      background-size: 24px 24px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ---- Scanlines overlay ---- */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,.06) 2px,
+        rgba(0,0,0,.06) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ---- NAV ---- */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: rgba(10,10,26,.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 2px solid var(--border);
+      padding: 0 24px;
+    }
+
+    nav .nav-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 60px;
+    }
+
+    nav .logo {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 12px;
+      color: var(--gold);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    nav .logo svg {
+      width: 28px;
+      height: 28px;
+    }
+
+    nav .nav-links {
+      display: flex;
+      gap: 28px;
+      list-style: none;
+    }
+
+    nav .nav-links a {
+      color: var(--text-dim);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      transition: color .2s;
+    }
+
+    nav .nav-links a:hover {
+      color: var(--gold);
+    }
+
+    /* ---- HERO ---- */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 100px 24px 60px;
+      position: relative;
+    }
+
+    .hero-content {
+      max-width: 700px;
+    }
+
+    .hero-duck-wrapper {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 32px;
+    }
+
+    .hero-duck {
+      width: 160px;
+      height: 160px;
+      animation: duckBounce 1.8s ease-in-out infinite;
+      filter: drop-shadow(0 8px 24px rgba(251, 191, 36, .25));
+      image-rendering: pixelated;
+    }
+
+    @keyframes duckBounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-18px); }
+    }
+
+    .hero h1 {
+      font-family: 'Press Start 2P', monospace;
+      font-size: clamp(24px, 5vw, 42px);
+      color: var(--gold);
+      margin-bottom: 16px;
+      line-height: 1.4;
+      text-shadow: 0 0 40px rgba(251, 191, 36, .2);
+    }
+
+    .hero .subtitle {
+      font-size: clamp(14px, 2.5vw, 18px);
+      color: var(--text);
+      margin-bottom: 12px;
+      font-weight: 500;
+    }
+
+    .hero .tagline {
+      font-size: clamp(12px, 2vw, 15px);
+      color: var(--text-dim);
+      margin-bottom: 36px;
+      max-width: 560px;
+      margin-left: auto;
+      margin-right: auto;
+      line-height: 1.8;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--gold);
+      color: #0a0a1a;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 13px;
+      padding: 16px 36px;
+      text-decoration: none;
+      border: 3px solid var(--gold-light);
+      border-radius: 0;
+      cursor: pointer;
+      transition: all .15s;
+      box-shadow:
+        4px 4px 0 #d97706,
+        0 0 30px rgba(251, 191, 36, .15);
+      image-rendering: pixelated;
+    }
+
+    .btn-primary:hover {
+      transform: translate(-2px, -2px);
+      box-shadow:
+        6px 6px 0 #d97706,
+        0 0 50px rgba(251, 191, 36, .25);
+    }
+
+    .btn-primary:active {
+      transform: translate(2px, 2px);
+      box-shadow: 2px 2px 0 #d97706;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      color: var(--gold-dim);
+      border: 2px solid var(--border);
+      padding: 6px 16px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* ---- SECTIONS ---- */
+    section {
+      padding: 80px 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .section-title {
+      font-family: 'Press Start 2P', monospace;
+      font-size: clamp(14px, 3vw, 20px);
+      color: var(--gold);
+      text-align: center;
+      margin-bottom: 16px;
+    }
+
+    .section-subtitle {
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 14px;
+      margin-bottom: 48px;
+      max-width: 500px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* ---- FEATURES ---- */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+
+    .feature-card {
+      background: var(--bg-card);
+      border: 2px solid var(--border);
+      padding: 28px 24px;
+      position: relative;
+      transition: all .2s;
+    }
+
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      top: -2px;
+      left: -2px;
+      right: -2px;
+      bottom: -2px;
+      border: 2px solid transparent;
+      transition: border-color .2s;
+      pointer-events: none;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-3px);
+      border-color: var(--gold);
+      box-shadow: 0 6px 24px rgba(251, 191, 36, .08);
+    }
+
+    .feature-card:hover::before {
+      border-color: rgba(251, 191, 36, .3);
+    }
+
+    .feature-icon {
+      font-size: 28px;
+      margin-bottom: 14px;
+      display: block;
+    }
+
+    .feature-card h3 {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 11px;
+      color: var(--gold);
+      margin-bottom: 10px;
+      line-height: 1.5;
+    }
+
+    .feature-card p {
+      font-size: 13px;
+      color: var(--text-dim);
+      line-height: 1.7;
+    }
+
+    /* ---- HOW IT WORKS ---- */
+    .steps {
+      display: flex;
+      gap: 32px;
+      justify-content: center;
+      flex-wrap: wrap;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .step {
+      flex: 1;
+      min-width: 220px;
+      max-width: 280px;
+      text-align: center;
+      padding: 32px 20px;
+      background: var(--bg-card);
+      border: 2px solid var(--border);
+      position: relative;
+    }
+
+    .step-number {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 32px;
+      color: var(--gold);
+      opacity: .3;
+      margin-bottom: 16px;
+      display: block;
+    }
+
+    .step h3 {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .step p {
+      font-size: 13px;
+      color: var(--text-dim);
+      line-height: 1.6;
+    }
+
+    .step-arrow {
+      display: flex;
+      align-items: center;
+      color: var(--gold);
+      font-size: 24px;
+      opacity: .4;
+      user-select: none;
+    }
+
+    /* ---- DOWNLOAD ---- */
+    .download-section {
+      text-align: center;
+      padding: 80px 0 60px;
+    }
+
+    .download-box {
+      background: var(--bg-card);
+      border: 2px solid var(--border);
+      padding: 48px 40px;
+      max-width: 560px;
+      margin: 0 auto;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .download-box::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    }
+
+    .download-box .btn-primary {
+      margin-bottom: 24px;
+    }
+
+    .sys-req {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+
+    .version-tag {
+      font-size: 11px;
+      color: var(--gold-dim);
+      border: 1px solid var(--border);
+      display: inline-block;
+      padding: 4px 12px;
+    }
+
+    /* ---- FOOTER ---- */
+    footer {
+      border-top: 2px solid var(--border);
+      padding: 32px 0;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    footer p {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+
+    footer a {
+      color: var(--gold-dim);
+      text-decoration: none;
+      transition: color .2s;
+    }
+
+    footer a:hover {
+      color: var(--gold);
+    }
+
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      margin-top: 12px;
+    }
+
+    /* ---- FLOATING DUCKS (decoration) ---- */
+    .float-duck {
+      position: fixed;
+      opacity: .04;
+      font-size: 80px;
+      pointer-events: none;
+      z-index: 0;
+      animation: floatDrift 20s ease-in-out infinite;
+    }
+
+    .float-duck:nth-child(1) { top: 20%; left: 5%; animation-delay: 0s; }
+    .float-duck:nth-child(2) { top: 60%; right: 5%; animation-delay: -7s; }
+    .float-duck:nth-child(3) { top: 80%; left: 15%; animation-delay: -13s; font-size: 50px; }
+
+    @keyframes floatDrift {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      25% { transform: translateY(-20px) rotate(3deg); }
+      75% { transform: translateY(15px) rotate(-2deg); }
+    }
+
+    /* ---- RESPONSIVE ---- */
+    @media (max-width: 768px) {
+      nav .nav-links { display: none; }
+
+      .hero { padding: 80px 20px 40px; min-height: auto; }
+      .hero-duck { width: 120px; height: 120px; }
+
+      .features-grid { grid-template-columns: 1fr; }
+
+      .steps { flex-direction: column; align-items: center; }
+      .step-arrow { display: none; }
+      .step { max-width: 100%; }
+
+      .download-box { padding: 32px 24px; }
+
+      section { padding: 60px 0; }
+    }
+
+    @media (max-width: 480px) {
+      .btn-primary {
+        font-size: 11px;
+        padding: 14px 24px;
+      }
+    }
+
+    /* ---- PIXEL DIVIDER ---- */
+    .pixel-divider {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      padding: 20px 0;
+    }
+
+    .pixel-divider span {
+      width: 8px;
+      height: 8px;
+      background: var(--gold);
+      opacity: .2;
+      display: block;
+    }
+
+    .pixel-divider span:nth-child(2) { opacity: .4; }
+    .pixel-divider span:nth-child(3) { opacity: .6; }
+    .pixel-divider span:nth-child(4) { opacity: .4; }
+    .pixel-divider span:nth-child(5) { opacity: .2; }
+
+    /* ---- QUACK CURSOR ---- */
+    @keyframes quackPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Floating decoration -->
+<div class="float-duck" aria-hidden="true">&#x1F986;</div>
+<div class="float-duck" aria-hidden="true">&#x1F986;</div>
+<div class="float-duck" aria-hidden="true">&#x1F986;</div>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-inner">
+    <a href="#" class="logo">
+      <svg viewBox="0 0 16 16" style="image-rendering:pixelated">
+        <rect x="4" y="2" width="4" height="1" fill="#fbbf24"/>
+        <rect x="3" y="3" width="6" height="3" fill="#fbbf24"/>
+        <rect x="1" y="4" width="2" height="1" fill="#ef4444"/>
+        <rect x="0" y="5" width="3" height="1" fill="#dc2626"/>
+        <rect x="1" y="6" width="2" height="1" fill="#ef4444"/>
+        <rect x="5" y="3" width="2" height="1" fill="white"/>
+        <rect x="6" y="3" width="1" height="1" fill="black"/>
+        <rect x="3" y="7" width="10" height="1" fill="#fbbf24"/>
+        <rect x="2" y="8" width="12" height="1" fill="#fbbf24"/>
+        <rect x="1" y="9" width="13" height="3" fill="#fbbf24"/>
+        <rect x="2" y="12" width="12" height="1" fill="#fbbf24"/>
+        <rect x="3" y="13" width="10" height="1" fill="#fbbf24"/>
+      </svg>
+      Jean Claude Duck
+    </a>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#how-it-works">How It Works</a></li>
+      <li><a href="#download">Download</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-content">
+    <div class="hero-duck-wrapper">
+      <svg class="hero-duck" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+        <!-- Body -->
+        <rect x="3" y="7" width="10" height="1" fill="#fbbf24"/>
+        <rect x="2" y="8" width="12" height="1" fill="#fbbf24"/>
+        <rect x="1" y="9" width="13" height="1" fill="#fbbf24"/>
+        <rect x="1" y="10" width="13" height="1" fill="#fbbf24"/>
+        <rect x="1" y="11" width="13" height="1" fill="#fbbf24"/>
+        <rect x="2" y="12" width="12" height="1" fill="#fbbf24"/>
+        <rect x="3" y="13" width="10" height="1" fill="#fbbf24"/>
+        <rect x="4" y="14" width="8" height="1" fill="#f59e0b"/>
+        <!-- Belly highlight -->
+        <rect x="4" y="10" width="7" height="1" fill="#fcd34d"/>
+        <rect x="4" y="11" width="7" height="1" fill="#fde68a"/>
+        <rect x="5" y="12" width="5" height="1" fill="#fcd34d"/>
+        <!-- Body shadow -->
+        <rect x="13" y="9" width="1" height="3" fill="#d97706"/>
+        <rect x="12" y="12" width="2" height="1" fill="#e5a20c"/>
+        <!-- Head -->
+        <rect x="4" y="2" width="4" height="1" fill="#fbbf24"/>
+        <rect x="3" y="3" width="6" height="1" fill="#fbbf24"/>
+        <rect x="3" y="4" width="6" height="1" fill="#fbbf24"/>
+        <rect x="3" y="5" width="6" height="1" fill="#fbbf24"/>
+        <rect x="4" y="6" width="5" height="1" fill="#fbbf24"/>
+        <!-- Head highlight -->
+        <rect x="5" y="2" width="2" height="1" fill="#fde68a"/>
+        <rect x="4" y="3" width="2" height="1" fill="#fcd34d"/>
+        <!-- Beak -->
+        <rect x="1" y="4" width="2" height="1" fill="#ef4444"/>
+        <rect x="0" y="5" width="3" height="1" fill="#dc2626"/>
+        <rect x="1" y="6" width="2" height="1" fill="#ef4444"/>
+        <!-- Tail -->
+        <rect x="12" y="6" width="2" height="1" fill="#fbbf24"/>
+        <rect x="13" y="5" width="1" height="1" fill="#fbbf24"/>
+        <rect x="13" y="4" width="1" height="1" fill="#f59e0b"/>
+        <!-- Wing -->
+        <rect x="4" y="9" width="6" height="1" fill="#f59e0b"/>
+        <rect x="3" y="10" width="1" height="2" fill="#e5a20c"/>
+        <rect x="10" y="9" width="1" height="2" fill="#e5a20c"/>
+        <!-- Eye -->
+        <rect x="5" y="3" width="2" height="2" fill="white"/>
+        <rect x="6" y="3" width="1" height="2" fill="black"/>
+      </svg>
+    </div>
+
+    <h1>Jean Claude Duck</h1>
+    <p class="subtitle">Your AI-powered desktop companion &#x1F424;</p>
+    <p class="tagline">A pixel-art rubber duck that lives on your dock, chats with AI, reacts to what you do, and quacks when you get notifications.</p>
+
+    <div class="hero-actions">
+      <a href="#download" class="btn-primary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download for Mac
+      </a>
+      <span class="badge">Free &amp; Open Source</span>
+    </div>
+  </div>
+</section>
+
+<!-- PIXEL DIVIDER -->
+<div class="pixel-divider" aria-hidden="true">
+  <span></span><span></span><span></span><span></span><span></span>
+</div>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="container">
+    <h2 class="section-title">&gt; Features</h2>
+    <p class="section-subtitle">Everything a duck needs to be your best desk buddy.</p>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <span class="feature-icon" aria-hidden="true">&#x1F9E0;</span>
+        <h3>AI Brain</h3>
+        <p>Chat with your duck using a local AI (Ollama). No cloud, no API key, 100% private.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon" aria-hidden="true">&#x1F440;</span>
+        <h3>Eye Tracking</h3>
+        <p>Jean Claude follows your cursor with his eyes. He's always watching.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon" aria-hidden="true">&#x1F4AC;</span>
+        <h3>Activity Reactions</h3>
+        <p>Coding? Browsing? Slacking? Your duck knows and reacts with little speech bubbles.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon" aria-hidden="true">&#x1F514;</span>
+        <h3>Quack Notifications</h3>
+        <p>Get a satisfying quack sound every time you receive a macOS notification.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon" aria-hidden="true">&#x1F4DA;</span>
+        <h3>Obsidian Brain</h3>
+        <p>Connect your Obsidian vault. Your duck remembers your decisions, lessons, and patterns.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon" aria-hidden="true">&#x1F3AC;</span>
+        <h3>Animations</h3>
+        <p>Roundhouse kicks, splits, bounces &mdash; Jean Claude has moves.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PIXEL DIVIDER -->
+<div class="pixel-divider" aria-hidden="true">
+  <span></span><span></span><span></span><span></span><span></span>
+</div>
+
+<!-- HOW IT WORKS -->
+<section id="how-it-works">
+  <div class="container">
+    <h2 class="section-title">&gt; How It Works</h2>
+    <p class="section-subtitle">Three steps. One duck. Zero excuses.</p>
+
+    <div class="steps">
+      <div class="step">
+        <span class="step-number">01</span>
+        <h3>Download &amp; Install</h3>
+        <p>Grab the .dmg, drag to Applications. Done in 10 seconds.</p>
+      </div>
+      <div class="step-arrow" aria-hidden="true">&#x25B6;</div>
+      <div class="step">
+        <span class="step-number">02</span>
+        <h3>Install Ollama</h3>
+        <p>Free, local AI runtime. Your conversations never leave your machine.</p>
+      </div>
+      <div class="step-arrow" aria-hidden="true">&#x25B6;</div>
+      <div class="step">
+        <span class="step-number">03</span>
+        <h3>Click Your Duck</h3>
+        <p>Start chatting, get quacks, and let Jean Claude watch over your work.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PIXEL DIVIDER -->
+<div class="pixel-divider" aria-hidden="true">
+  <span></span><span></span><span></span><span></span><span></span>
+</div>
+
+<!-- DOWNLOAD -->
+<section id="download" class="download-section">
+  <div class="container">
+    <h2 class="section-title">&gt; Download</h2>
+    <p class="section-subtitle">Get your duck today.</p>
+
+    <div class="download-box">
+      <a href="#" class="btn-primary" style="margin-bottom: 24px; display: inline-flex;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download for Mac
+      </a>
+      <p class="sys-req">macOS 12+ &bull; Apple Silicon &amp; Intel &bull; ~100MB</p>
+      <span class="version-tag">v0.1.0</span>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <p>Made with &#x1F424; and Claude Code</p>
+    <p>&copy; 2026 Jean Claude Duck</p>
+    <div class="footer-links">
+      <a href="https://github.com" target="_blank" rel="noopener">GitHub</a>
+      <a href="#features">Features</a>
+      <a href="#download">Download</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
