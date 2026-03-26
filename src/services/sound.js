@@ -1,38 +1,22 @@
-// sound.js — generates and plays a quack sound using macOS say/afplay
-const { exec, execSync } = require('child_process');
+// sound.js — plays real duck quack sound
+const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-const QUACK_PATH = path.join(__dirname, '..', '..', 'assets', 'quack.aiff');
+const QUACK_PATH = path.join(__dirname, '..', '..', 'assets', 'quack.mp3');
 
 function ensureQuackSound() {
-  const assetsDir = path.join(__dirname, '..', '..', 'assets');
-  if (!fs.existsSync(assetsDir)) fs.mkdirSync(assetsDir, { recursive: true });
-
   if (!fs.existsSync(QUACK_PATH)) {
-    // Generate a quack sound using say command with a duck-like voice
-    try {
-      execSync(`say -v Cellos "quack" -o "${QUACK_PATH}"`);
-    } catch {
-      try {
-        // Fallback: use any available voice with a fast rate
-        execSync(`say -v Alex "quack" -o "${QUACK_PATH}" --rate=300`);
-      } catch {
-        console.error('sound.js: could not generate quack sound');
-      }
-    }
+    console.warn('sound.js: quack.mp3 not found in assets/');
   }
 }
 
 function playQuack() {
-  if (!fs.existsSync(QUACK_PATH)) {
-    // Last resort: just use say directly
-    exec('say -v Cellos "quack"');
-    return;
-  }
-
+  if (!fs.existsSync(QUACK_PATH)) return;
   try {
-    exec(`afplay "${QUACK_PATH}"`);
+    // Slight speed variation for natural feel
+    const rate = 0.9 + Math.random() * 0.2;
+    exec(`afplay -r ${rate.toFixed(2)} "${QUACK_PATH}"`);
   } catch {
     // silent fail
   }

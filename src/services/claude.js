@@ -70,7 +70,7 @@ async function sendMessage(userMessage, systemPrompt) {
 
   try {
     const response = await ollamaRequest({
-      model: 'llama3.2:3b',
+      model: 'llama3.1:8b',
       messages: [
         { role: 'system', content: fullPrompt },
         ...recentMessages,
