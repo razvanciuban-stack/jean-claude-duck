@@ -16,11 +16,13 @@ let wanderTimer = null;
 let wanderPaused = false; // externally paused (e.g. chat open)
 
 function create() {
-  const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
-  const dockY = screenH - 170; // sit on the dock
+  const display = screen.getPrimaryDisplay();
+  const screenW = display.workArea.width;
+  const dockY = getDockY();
   const savedPos = store.get('petPosition');
-  const x = savedPos?.x ?? screenW - 200;
-  const y = dockY; // always on the dock
+  const x = Math.round(screenW / 2) - 90; // center of screen
+  const y = Math.round(display.workArea.height / 2); // middle of screen for testing
+  console.log('Pet window position:', { x, y, screenW, dockY });
 
   petWindow = new BrowserWindow({
     width: 180,
@@ -114,14 +116,26 @@ function pickWanderTarget() {
   const [cx] = petWindow.getPosition();
   const dockY = getDockY();
 
-  const margin = 20;
-  const maxX = width - 200;
+  const windowW = 180;
+  // Sometimes pick a target beyond the screen edge so the duck wraps around
+  const willWrap = Math.random() < 0.3; // 30% chance to walk off-screen
 
-  // Pick a random X position along the dock, far enough from current
   let targetX;
-  do {
-    targetX = margin + Math.random() * (maxX - margin);
-  } while (Math.abs(targetX - cx) < 150);
+  if (willWrap) {
+    // Pick a target past the edge — duck will walk off and wrap
+    if (cx < width / 2) {
+      targetX = -windowW - 50; // walk off left
+    } else {
+      targetX = width + windowW + 50; // walk off right
+    }
+  } else {
+    // Normal: pick a random X on the dock
+    const margin = 20;
+    const maxX = width - 200;
+    do {
+      targetX = margin + Math.random() * (maxX - margin);
+    } while (Math.abs(targetX - cx) < 150);
+  }
 
   return { x: Math.round(targetX), y: dockY };
 }
@@ -154,14 +168,43 @@ function startWalking() {
   animateToTarget();
 }
 
+let isWrapping = false; // true while duck is off-screen doing a wrap
+
 function animateToTarget() {
   if (!petWindow || petWindow.isDestroyed() || !wanderTarget || wanderPaused || isDragging) {
     wanderState = 'idle';
+    isWrapping = false;
     return;
   }
 
   const [cx, cy] = petWindow.getPosition();
   const dockY = getDockY();
+  const { width: sW } = getScreenBounds();
+  const windowW = 180;
+
+  // If wrapping, just keep moving in same direction until we're well on screen
+  if (isWrapping) {
+    const speed = 2.5;
+    const direction = wanderTarget._wrapDir; // 1 = right, -1 = left
+    let newX = Math.round(cx + direction * speed);
+    petWindow.setPosition(newX, dockY);
+
+    // Only consider "on screen" once the duck is fully visible (not just peeking)
+    const fullyOnScreen = newX > 20 && newX < sW - windowW - 20;
+    if (fullyOnScreen) {
+      // Wrapped! Now pick a real on-screen target to walk to
+      isWrapping = false;
+      const margin = 100;
+      wanderTarget = {
+        x: Math.round(margin + Math.random() * (sW - margin * 2)),
+        y: dockY,
+      };
+    }
+
+    setTimeout(() => animateToTarget(), 33);
+    return;
+  }
+
   const dx = wanderTarget.x - cx;
   const dist = Math.abs(dx);
 
@@ -187,23 +230,24 @@ function animateToTarget() {
   // Move horizontally only along the dock
   const speed = 2.5;
   const direction = dx > 0 ? 1 : -1;
-  const { width: sW } = getScreenBounds();
-  const minX = 10, maxX = sW - 190;
   let newX = Math.round(cx + direction * speed);
 
-  // Edge detection — turn around at screen edges
-  if (newX <= minX || newX >= maxX) {
-    newX = Math.max(minX, Math.min(maxX, newX));
-    petWindow.setPosition(newX, dockY);
-
-    // Pick new target in opposite direction
-    const goingRight = newX <= minX;
-    wanderTarget = {
-      x: Math.round(goingRight ? (maxX * 0.3 + Math.random() * maxX * 0.5) : (minX + Math.random() * maxX * 0.4)),
-      y: dockY,
-    };
+  // Check if duck has fully walked off screen → start wrap
+  if (newX >= sW + 10) {
+    // Off right edge → appear from the left side
+    isWrapping = true;
+    wanderTarget._wrapDir = 1; // walking right, entering from left
+    petWindow.setPosition(-windowW - 40, dockY); // well off left edge
     if (petWindow && !petWindow.isDestroyed()) {
-      petWindow.webContents.send('pet:wander', { action: 'walk', direction: goingRight ? 'right' : 'left' });
+      petWindow.webContents.send('pet:wander', { action: 'walk', direction: 'right' });
+    }
+  } else if (newX <= -windowW - 10) {
+    // Off left edge → appear from the right side
+    isWrapping = true;
+    wanderTarget._wrapDir = -1; // walking left, entering from right
+    petWindow.setPosition(sW + 40, dockY); // well off right edge
+    if (petWindow && !petWindow.isDestroyed()) {
+      petWindow.webContents.send('pet:wander', { action: 'walk', direction: 'left' });
     }
   } else {
     petWindow.setPosition(newX, dockY);
