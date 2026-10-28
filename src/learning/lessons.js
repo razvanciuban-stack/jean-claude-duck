@@ -67,7 +67,7 @@ function toLessonStep(step) {
     id: step.id,
     app: step.bundleId || step.appName || '',
     action: step.action,
-    target: targetTitle(step),
+    target: safe(targetTitle(step)),
     text: describeStep(step),
     userEdited: false,
     variants: [],
@@ -89,6 +89,24 @@ function lessonFiles(vault) {
   return vault.list('lessons').filter((f) => f.endsWith('.md'));
 }
 
+function normText(v) {
+  return clean(v).toLowerCase();
+}
+
+// Remember steps the user removed so a merge can never bring them back
+function withTombstones(md, lesson, removed) {
+  if (!removed.length) return lesson;
+  let old = [];
+  try {
+    const m = [...md.matchAll(/^```mysthi-lesson[ \t]*\n([\s\S]*?)\n```[ \t]*$/gm)].pop();
+    old = JSON.parse(m[1]).steps || [];
+  } catch (_) { /* ids alone still protect */ }
+  const text = new Map(old.map((s) => [s.id, s.text]));
+  const ids = uniq([...(lesson.removedIds || []), ...removed]);
+  const texts = uniq([...(lesson.removedTexts || []), ...removed.map((id) => normText(text.get(id)))]);
+  return { ...lesson, removedIds: ids, removedTexts: texts };
+}
+
 function loadLessons(vault) {
   const out = [];
   for (const file of lessonFiles(vault)) {
@@ -102,8 +120,8 @@ function loadLessons(vault) {
       if (err instanceof LessonParseError) continue;
       throw err;
     }
-    const lesson = { ...parsed.lesson, slug: file.slice(0, -3) };
     const e = parsed.edits;
+    const lesson = withTombstones(md, { ...parsed.lesson, slug: file.slice(0, -3) }, e.removed);
     if (e.changed.length || e.removed.length || e.added.length) vault.writeAtomic(rel, renderLesson(lesson));
     out.push(lesson);
   }
@@ -115,7 +133,8 @@ function readLesson(vault, slug) {
   const md = vault.read(`lessons/${slug}.md`);
   if (md == null) return null;
   try {
-    return { ...parseLesson(md).lesson, slug };
+    const parsed = parseLesson(md);
+    return withTombstones(md, { ...parsed.lesson, slug }, parsed.edits.removed);
   } catch (err) {
     if (err instanceof LessonParseError) return null;
     throw err;
@@ -130,41 +149,57 @@ function newId() {
   return 'm' + crypto.randomBytes(4).toString('hex');
 }
 
+function modelTarget(t, fallback) {
+  if (typeof t === 'string') return safe(t);
+  if (t && typeof t === 'object') return { role: safe(t.role), title: safe(t.title || t.description) };
+  return fallback;
+}
+
 function modelStepFields(m, base) {
   const out = {
-    app: typeof m.app === 'string' && m.app ? m.app : (base ? base.app : ''),
-    action: typeof m.action === 'string' && m.action ? m.action : (base ? base.action : 'manual'),
-    target: typeof m.target === 'string' || (m.target && typeof m.target === 'object') ? m.target : (base ? base.target : ''),
+    app: safe(m.app) || (base ? base.app : ''),
+    action: safe(m.action) || (base ? base.action : 'manual'),
+    target: modelTarget(m.target, base ? base.target : ''),
   };
   if (m.value != null) out.value = safe(m.value);
   else if (base && base.value != null) out.value = base.value;
   return out;
 }
 
-function mergeSteps(existing, modelSteps) {
+function mergeSteps(existing, modelSteps, tombTexts = []) {
   const byId = new Map(existing.map((s) => [s.id, s]));
-  const seen = new Set();
+  const tomb = new Set(tombTexts);
+  const placed = new Map(); // id -> entry in result
   const result = [];
   for (const m of modelSteps) {
     if (!m || typeof m !== 'object') continue;
     const text = safe(m.text);
-    const old = typeof m.id === 'string' && byId.has(m.id) && !seen.has(m.id) ? byId.get(m.id) : null;
-    if (old) {
-      seen.add(old.id);
+    if (m.id != null && m.id !== '') {
+      // Only ids of steps that exist now are valid; anything else (e.g. user-removed) is dropped
+      const old = typeof m.id === 'string' ? byId.get(m.id) : null;
+      if (!old) continue;
+      if (placed.has(old.id)) {
+        const entry = placed.get(old.id);
+        if (old.userEdited && text && text !== entry.text && !entry.variants.includes(text)) entry.variants.push(text);
+        continue;
+      }
+      let entry;
       if (old.userEdited) {
         const variants = [...(old.variants || [])];
         if (text && text !== old.text && !variants.includes(text)) variants.push(text);
-        result.push({ ...old, variants });
+        entry = { ...old, variants };
       } else {
-        result.push({ ...old, ...modelStepFields(m, old), text: text || old.text, userEdited: false, variants: old.variants || [] });
+        entry = { ...old, ...modelStepFields(m, old), text: text || old.text, userEdited: false, variants: old.variants || [] };
       }
-    } else if (text) {
+      placed.set(old.id, entry);
+      result.push(entry);
+    } else if (text && !tomb.has(normText(text))) {
       result.push({ id: newId(), ...modelStepFields(m, null), text, userEdited: false, variants: [] });
     }
   }
   // user-edited steps the model omitted keep their original position
   existing.forEach((s, i) => {
-    if (s.userEdited && !seen.has(s.id)) result.splice(Math.min(i, result.length), 0, s);
+    if (s.userEdited && !placed.has(s.id)) result.splice(Math.min(i, result.length), 0, s);
   });
   return result;
 }
@@ -238,11 +273,13 @@ async function learnTask({ task, steps, lessons, vault, ask = chatJSON, today })
   if (!res || !Array.isArray(res.steps)) throw new Error('Merge response has no steps array');
   const changes = (Array.isArray(res.changes) ? res.changes : []).map(safe).filter(Boolean);
 
+  // R16: a response with no usable step text never wipes the lesson
+  const usable = res.steps.some((m) => m && typeof m === 'object' && safe(m.text));
   const timesObserved = (existing.timesObserved || 0) + 1;
   const lesson = {
     ...existing,
     apps: uniq([...(existing.apps || []), ...runApps]),
-    steps: mergeSteps(existing.steps, res.steps),
+    steps: usable || !existing.steps.length ? mergeSteps(existing.steps, res.steps, existing.removedTexts) : existing.steps,
     timesObserved,
     confident: timesObserved >= CONFIDENT_AT,
     lastSeen: today,

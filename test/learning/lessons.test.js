@@ -141,18 +141,77 @@ test('user-removed step is not resurrected', async () => {
   const md = vault.read('lessons/export-the-weekly-report.md').replace(/^2\. .*\n/m, '');
   vault.writeAtomic('lessons/export-the-weekly-report.md', md);
   let payload;
-  const ask = scripted([
+  const mk = () => scripted([
     { slug: 'export-the-weekly-report' },
     (args) => {
       payload = JSON.parse(args.messages[1].content);
-      return { steps: [{ id: 'j1', text: 'a', app: 'x', action: 'click', target: 't' }, { id: 'j2', text: 'zombie', app: 'x', action: 'click', target: 't' }], changes: [] };
+      return { steps: [
+        { id: 'j1', text: 'a', app: 'x', action: 'click', target: 't' },
+        { id: 'j2', text: 'zombie', app: 'x', action: 'click', target: 't' },
+        { text: 'In Safari, press cmd+s', app: 'x', action: 'shortcut', target: '' },
+        { text: 'Brand new step', app: 'x', action: 'click', target: 't' },
+      ], changes: [] };
     },
   ]);
-  const res = await learnTask({ task, steps, lessons: loadLessons(vault), vault, ask, today: '2026-10-02' });
+  // First load tombstones the removal and rewrites the note; a second load must still remember it.
+  loadLessons(vault);
+  const res = await learnTask({ task, steps, lessons: loadLessons(vault), vault, ask: mk(), today: '2026-10-02' });
   assert.ok(!payload.existing.some((s) => s.id === 'j2'));
-  assert.ok(!res.lesson.steps.some((s) => s.id === 'j2'));
-  assert.ok(!res.lesson.steps.some((s) => s.text === 'zombie' && s.id === 'j2'));
-  assert.ok(res.lesson.steps.some((s) => s.text === 'zombie' && /^m[0-9a-f]{8}$/.test(s.id)));
+  assert.ok(!res.lesson.steps.some((s) => s.id === 'j2' || s.text === 'zombie' || s.text === 'In Safari, press cmd+s'));
+  assert.ok(res.lesson.steps.some((s) => s.text === 'Brand new step' && /^m[0-9a-f]{8}$/.test(s.id)));
+  assert.deepStrictEqual(res.lesson.removedIds, ['j2']);
+  // and again on the next observation, from disk
+  const res2 = await learnTask({ task, steps, lessons: loadLessons(vault), vault, ask: mk(), today: '2026-10-03' });
+  assert.ok(!res2.lesson.steps.some((s) => s.text === 'In Safari, press cmd+s'));
+});
+
+test('model app/action/target are redacted before writing', async () => {
+  const { vault } = tmpVault();
+  await learnNew(vault);
+  const ask = scripted([
+    { slug: 'export-the-weekly-report' },
+    { steps: [
+      { id: 'j1', text: 'Open', app: 'host 10.0.0.5', action: 'click', target: { role: 'AXButton', title: 'sk-abcdefghijklmnopqrstuvwxyz123456' } },
+      { text: 'New', app: 'a', action: 'click', target: 'key sk-abcdefghijklmnopqrstuvwxyz123456 at 10.0.0.5' },
+    ], changes: [] },
+  ]);
+  await learnTask({ task, steps, lessons: loadLessons(vault), vault, ask, today: '2026-10-02' });
+  const disk = vault.read('lessons/export-the-weekly-report.md');
+  assert.ok(!disk.includes('sk-abcdefghij'));
+  assert.ok(!disk.includes('10.0.0.5'));
+});
+
+test('empty or text-less model steps keep the lesson but count the observation', async () => {
+  const { vault } = tmpVault();
+  await learnNew(vault);
+  for (const bad of [[], [{ id: 'j1' }, { app: 'x' }]]) {
+    const before = loadLessons(vault)[0];
+    const ask = scripted([{ slug: 'export-the-weekly-report' }, { steps: bad, changes: [] }]);
+    const res = await learnTask({ task, steps, lessons: [before], vault, ask, today: '2026-10-05' });
+    assert.deepStrictEqual(res.lesson.steps, before.steps);
+    assert.strictEqual(res.lesson.timesObserved, before.timesObserved + 1);
+    assert.strictEqual(res.lesson.lastSeen, '2026-10-05');
+  }
+});
+
+test('duplicate model ids: first wins, extra text goes to variants of a user-edited step', async () => {
+  const { vault } = tmpVault();
+  await learnNew(vault);
+  const md = vault.read('lessons/export-the-weekly-report.md').replace('In Safari, press cmd+s', 'Save it');
+  vault.writeAtomic('lessons/export-the-weekly-report.md', md);
+  const ask = scripted([
+    { slug: 'export-the-weekly-report' },
+    { steps: [
+      { id: 'j2', text: 'Save A', app: 'a', action: 'shortcut', target: '' },
+      { id: 'j2', text: 'Save B', app: 'a', action: 'shortcut', target: '' },
+      { id: 'j1', text: 'One', app: 'a', action: 'click', target: '' },
+      { id: 'j1', text: 'One again', app: 'a', action: 'click', target: '' },
+    ], changes: [] },
+  ]);
+  const res = await learnTask({ task, steps, lessons: loadLessons(vault), vault, ask, today: '2026-10-02' });
+  assert.deepStrictEqual(res.lesson.steps.map((s) => s.id), ['j2', 'j1']);
+  assert.deepStrictEqual(res.lesson.steps[0].variants, ['Save A', 'Save B']);
+  assert.strictEqual(res.lesson.steps[1].text, 'One');
 });
 
 test('merge drops omitted plain steps, adds id-less steps, redacts model strings', async () => {

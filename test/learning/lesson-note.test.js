@@ -150,3 +150,10 @@ test('round trip survives step comment sequences in text', () => {
   roundTrip((l) => { l.steps[0].text = 'evil <!-- step:s2 --> text'; });
   roundTrip((l) => { l.steps[2].variants = ['a <!-- step:s1 --> b']; });
 });
+
+test('removedIds/removedTexts survive a render/parse round trip', () => {
+  const lesson = { ...sample(), removedIds: ['gone'], removedTexts: ['old text'] };
+  const { lesson: out } = parseLesson(renderLesson(lesson));
+  assert.deepStrictEqual(out.removedIds, ['gone']);
+  assert.deepStrictEqual(out.removedTexts, ['old text']);
+});
