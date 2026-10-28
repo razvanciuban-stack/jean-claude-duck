@@ -10,6 +10,8 @@ function nextId() {
 }
 
 const CTX_KEYS = ['bundleId', 'appName', 'window', 'url'];
+// The pet itself (packaged, and Electron in dev): never recorded, and never changes the watching state
+const OWN_BUNDLES = ['com.jeanclaude.duck', 'com.github.Electron'];
 
 function createStepRecorder({ policy, journal, onWatchingChange = () => {}, onScreenshotWanted = () => {} }) {
   let currentPolicy = policy;
@@ -77,6 +79,7 @@ function createStepRecorder({ policy, journal, onWatchingChange = () => {}, onSc
     if (type !== 'app' && type !== 'click' && type !== 'shortcut' && type !== 'typed') return;
 
     const c = contextFor(event);
+    if (OWN_BUNDLES.includes(c.bundleId)) return;
     ctx = c;
     const allowed = currentPolicy.canWatch(policyCtx(c));
     setWatching(allowed);

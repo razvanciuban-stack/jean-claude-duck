@@ -338,3 +338,33 @@ test('screenshot whose own context is do-not-watch is dropped, never described',
   h.emit('event', { type: 'screenshot', id: 'e', jpegBase64: 'OK', bundleId: 'com.apple.Notes', appName: 'Notes', window: 'List', url: null });
   assert.deepStrictEqual(ctx.pushed, [{ id: 'e', jpeg: 'OK' }]);
 });
+
+test('eyes close while a permission is missing and reopen when granted', async () => {
+  const ctx = setup();
+  ctx.learning.enable();
+  assert.strictEqual(ctx.learning.isWatching(), true);
+  ctx.helpers[0].emit('event', { type: 'permissions', screen: true, accessibility: false, input: true });
+  assert.strictEqual(ctx.learning.isWatching(), false);
+  assert.deepStrictEqual(ctx.watching, [true, false]);
+  ctx.helpers[0].emit('event', { type: 'permissions', screen: true, accessibility: true, input: true });
+  assert.strictEqual(ctx.learning.isWatching(), true);
+  assert.deepStrictEqual(ctx.watching, [true, false, true]);
+});
+
+test('model unavailable does not close the eyes', async () => {
+  const ctx = setup({ deps: { isAvailable: async () => false } });
+  ctx.learning.enable();
+  await flush();
+  assert.strictEqual(ctx.learning.statusLabel(), 'Learning: model unavailable');
+  assert.strictEqual(ctx.learning.isWatching(), true);
+});
+
+test('pipeline gets an isEnabled callback that follows the on/off state', () => {
+  let args = null;
+  const ctx = setup({ deps: { createPipeline: (a) => { args = a; return { runIfIdle: async () => 'nothing', status: () => ({}) }; } } });
+  ctx.learning.enable();
+  assert.strictEqual(typeof args.isEnabled, 'function');
+  assert.strictEqual(args.isEnabled(), true);
+  ctx.learning.disable();
+  assert.strictEqual(args.isEnabled(), false);
+});

@@ -14,15 +14,20 @@ These are built into how Mysthi works:
 
 - Password fields are dropped inside the capture helper, before anything reaches the app.
 - Screenshots and raw keystrokes are never written to disk.
-- Text you type in a terminal is never recorded, except the command line the terminal echoes back.
+- In Terminal, iTerm2 and Warp, and in any field the helper identifies as a terminal, typed text is recorded only when the terminal echoes it on its last visible line, and never when that line contains a password-prompt word (`password`, `sudo`, `token`, `secret`, `API key`, ...).
+- In code editors (VS Code, VS Code Insiders, Cursor, VSCodium, Zed), typed text is recorded only from a field macOS Accessibility reports as a text field or text area with a name or description that does not mention "terminal". Anything Mysthi can't classify, including an integrated terminal it can't recognise, is dropped. An integrated terminal it does recognise follows the terminal rule above.
+- A screenshot is described only if the app (and, for a browser, the site) that is in front at the moment of capture may be watched; otherwise it is thrown away unread. Typing that is cut off by switching apps or windows gets no screenshot.
+- Jean Claude Duck's own windows are never recorded or captured.
 - Nothing is captured while learning is paused or off.
+
+Limits: other apps with built-in terminals (for example JetBrains IDEs or Hyper) are not covered by the terminal rule; add them to `do-not-watch.md`. A screenshot shows the whole display, so a do-not-watch window that is visible next to the app in front can still appear in it.
 
 ### What is filtered on a best-effort basis
 
 These checks use pattern matching, so they can miss things. They are not a guarantee.
 
-- Apps and websites in `do-not-watch.md` are skipped (see below). It starts with a built-in list of password managers and messaging apps, and Mysthi also tries to recognise banking sites by domain and keywords.
-- Text that looks like a password prompt (`sudo`, verification codes, and similar) is not recorded.
+- Apps and websites in `do-not-watch.md` are skipped (see below). It starts with a built-in list of password managers and messaging apps (and their websites: WhatsApp Web, Bitwarden, 1Password), and Mysthi also tries to recognise banking sites by domain and keywords.
+- Text typed into a field labelled like a password prompt (password, `sudo`, PIN, verification code, token, secret, API key, private key, and similar) is not recorded.
 - Before text is saved, Mysthi tries to replace secrets with placeholders: `[PASSWORD]`, `[API_KEY]`, `[SECRET]`, `[PRIVATE_KEY]`, `[IP]`, `[IBAN]`, `[CARD]`, `[PHONE]`.
 
 Because of this, add any sensitive app or site you use to `do-not-watch.md` yourself.
@@ -47,7 +52,9 @@ Tray menu, "Open lessons folder" opens `lessons/`.
 
 ### Editing the do-not-watch list
 
-Open `~/ObsidianVault/mysthi/do-not-watch.md`. It has two sections, `## Apps` (macOS bundle ids, for example `com.1password.1password`) and `## Websites` (domains, for example `mybank.com`; subdomains are included). Add one `- item` per line and save. Mysthi re-reads the file about once a minute.
+Open `~/ObsidianVault/mysthi/do-not-watch.md`. It has two sections, `## Apps` (macOS bundle ids, for example `com.1password.1password`) and `## Websites` (domains, for example `mybank.com`; subdomains and `www.` are included, and a pasted URL such as `https://mybank.com/login` is reduced to its domain). Add one `- item` per line and save. Mysthi re-reads the file about once a minute.
+
+The file is created once and never overwritten. If yours was created before the built-in website list grew (WhatsApp Web, Bitwarden, 1Password), those sites are still blocked; they just aren't listed in your file. Delete the file to have Mysthi write a fresh one with the current list.
 
 ## One-time setup checklist
 
@@ -74,7 +81,7 @@ macOS may ask for Automation access ("System Events") the first time; that is th
 ## Daily use
 
 - **Pause / resume:** press **⌘⇧M**, or **⌥-click** the pet, or use Pause learning in the tray menu.
-- **Closed eyes** on the duck mean learning is on but not watching right now: paused, missing permissions, model unavailable, or you are in an app/site on the block list.
+- **Closed eyes** on the duck mean learning is on but not watching right now: paused, a permission is missing, or you are in an app/site on the block list. When the model is unavailable the eyes stay open: steps are still recorded and are learned once the model is back (the tray says `Learning: model unavailable`).
 - **Tray status line** (first item, greyed out):
   - `Learning: watching` - all good.
   - `Learning: paused` - you paused it.
@@ -92,6 +99,8 @@ macOS may ask for Automation access ("System Events") the first time; that is th
   grep -r "hunter2\|192.168" ~/ObsidianVault/mysthi ~/Library/Application\ Support/jean-claude-duck/learning
   ```
   (Use the real IP prefix you typed in place of `192.168`.)
+- [ ] **Editor terminal sudo:** in VS Code (or Cursor), open the integrated terminal, run `sudo -k; sudo true` and type a password (for example `hunter3`) at the prompt. After idle time, `grep -r "hunter3" ~/ObsidianVault/mysthi ~/Library/Application\ Support/jean-claude-duck/learning` prints nothing.
+- [ ] **Switching into a blocked app:** type a few words in Notes, then press ⌘Tab straight into 1Password. After idle time, no step description in the journal or lesson mentions 1Password.
 - [ ] **Banking:** visit a banking site. Nothing from that visit is recorded.
 - [ ] **Permissions survive a rebuild:** run `npm run build` again and relaunch. The tray shows `Learning: watching` without asking for permissions again.
 - [ ] **Helper capture check:** with learning on, click a toolbar button in Finder, type in Spotlight, and type in a password field. The click and the Spotlight search show up as steps; the password field produces no text.

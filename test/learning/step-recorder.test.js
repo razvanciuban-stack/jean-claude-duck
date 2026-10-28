@@ -240,3 +240,18 @@ test('editor: typed text kept from a positively classified non-terminal text fie
   rec.handle({ type: 'typed', ts: 2, text: 'const x = 1', secure: false, field: { role: 'AXTextArea', title: null, description: 'The editor is not accessible at this time.' }, isTerminal: false, visibleLine: null, ...vscode });
   assert.deepStrictEqual(journal.readSince(null).map((s) => s.value), ['refactor', 'const x = 1']);
 });
+
+test('events from the pet itself (packaged or dev Electron) are dropped and do not change watching', () => {
+  const { journal, rec, watching, shots } = setup();
+  rec.handle({ type: 'app', ...safari });
+  for (const bundleId of ['com.jeanclaude.duck', 'com.github.Electron']) {
+    const own = { bundleId, appName: 'Jean Claude', window: 'Chat', url: null };
+    rec.handle({ type: 'app', ...own });
+    rec.handle({ type: 'click', ts: 1, target: { role: 'AXButton', title: 'Send' }, ...own });
+    rec.handle({ type: 'typed', ts: 2, text: 'hello pet', secure: false, field: field('Message'), isTerminal: false, visibleLine: null, ...own });
+    rec.handle({ type: 'shortcut', ts: 3, keys: 'cmd+k', ...own });
+  }
+  assert.deepStrictEqual(journal.readSince(null), []);
+  assert.deepStrictEqual(shots, []);
+  assert.deepStrictEqual(watching, [true]);
+});

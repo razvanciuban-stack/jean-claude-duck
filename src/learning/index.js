@@ -96,7 +96,9 @@ function createLearning({
   }
 
   function update() {
-    const w = !!(enabled && !paused && helper && contextAllowed);
+    // Eyes close when off, paused, the helper is gone, a permission is missing, or the app is do-not-watch.
+    // A missing model does not close them: steps are still recorded and learned once the model is back.
+    const w = !!(enabled && !paused && helper && contextAllowed && !missingPermissions(permissions).length);
     if (w !== watching) {
       watching = w;
       onWatchingChange(w);
@@ -189,7 +191,7 @@ function createLearning({
   function startRuntime() {
     reloadPolicy();
     journal = createJournal(stateDir);
-    pipeline = d.createPipeline({ journal, vault, stateDir, now: d.now, getIdleMs: d.getIdleMs });
+    pipeline = d.createPipeline({ journal, vault, stateDir, now: d.now, getIdleMs: d.getIdleMs, isEnabled: () => enabled });
     contextAllowed = true;
     recorder = createStepRecorder({
       policy,
