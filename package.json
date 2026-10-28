@@ -25,7 +25,10 @@
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
         "NSAppleEventsUsageDescription": "Jean Claude Duck checks which app is in front so it can react to what you are doing."
-      }
+      },
+      "binaries": [
+        "Contents/Resources/mysthi-helper"
+      ]
     },
     "dmg": {
       "title": "Jean Claude Duck",
