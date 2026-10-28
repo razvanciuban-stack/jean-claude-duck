@@ -1,15 +1,15 @@
 const { BrowserWindow, screen, ipcMain } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
-const { pointAt, nearestS, edgeRange, route, toLocal, spans } = require('./perimeter');
+const { pointAt, edgeRange, route, toLocal, spans } = require('./perimeter');
 
 const store = new Store();
 
 const SIZE = 180;          // square window, so Mysthi can turn onto walls and the ceiling inside it
 const SPEED = 1.4;         // px per frame — a calm cat stroll; mysthi.js times her steps to this
 const FRAME_MS = 33;       // ~30 fps movement
-// Where she likes to be: mostly on the floor, sometimes up a wall, now and then on the ceiling
-const EDGE_WEIGHTS = [['floor', 0.5], ['right', 0.2], ['left', 0.2], ['ceiling', 0.1]];
+// Where she walks: only along the bottom of the screen (floor-to-floor routes never turn up a wall)
+const EDGE_WEIGHTS = [['floor', 1]];
 
 let petWindow = null;
 let windowStartPos = null;
@@ -51,7 +51,8 @@ function placeAt(s) {
 function create() {
   const area = screen.getPrimaryDisplay().workArea;
   const saved = store.get('petLoopS');
-  const start = Number.isFinite(saved) ? saved : spans(area, SIZE).W / 2; // middle of the floor
+  const floorW = spans(area, SIZE).W;
+  const start = Number.isFinite(saved) && saved >= 0 && saved < floorW ? saved : floorW / 2; // on the floor
   const p = pointAt(area, start, SIZE);
   console.log('Pet window position:', { x: Math.round(p.x), y: Math.round(p.y), edge: p.edge });
 
@@ -107,9 +108,10 @@ function create() {
     if (!petWindow) return;
     isDragging = false;
     windowStartPos = null;
-    // Land on whichever edge of that screen is closest to where she was dropped
-    const [x, y] = petWindow.getPosition();
-    placeAt(nearestS(bounds(), x, y, SIZE));
+    // Land on the floor of that screen, straight below where she was dropped
+    const [x] = petWindow.getPosition();
+    const area = bounds();
+    placeAt(Math.min(Math.max(x - area.x, 0), spans(area, SIZE).W - 1));
     store.set('petLoopS', loopS);
     setTimeout(() => {
       if (!wanderPaused) scheduleNextWander();
