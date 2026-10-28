@@ -14,12 +14,43 @@ const BROWSER_BUNDLES = [
   'com.brave.Browser'
 ];
 
-const BANKING_KEYWORDS = /bank|banca|banking|ibank|netbank|paypal/i;
-const PASSWORD_PROMPT = /pass(word|phrase|code)?|parola|sudo|\bpin\b|one[- ]?time|otp|verification code|2fa|cod de verificare/i;
+// Code editors with integrated terminals: typed text is kept only from a field the helper positively
+// classified as a non-terminal text field (see editorTextFieldAllowed)
+const EDITOR_BUNDLES = [
+  'com.microsoft.VSCode',
+  'com.microsoft.VSCodeInsiders',
+  'com.todesktop.230313mzl4w4u92', // Cursor
+  'com.vscodium',
+  'dev.zed.Zed'
+];
+const EDITOR_TEXT_ROLES = ['AXTextArea', 'AXTextField'];
 
-// Lowercase, trim, strip "*." / leading and trailing dots
+// Fails closed: true only for an AXTextArea/AXTextField with a non-empty title or description,
+// and no label mentioning "terminal". Anything unclassifiable (no role, no labels) is false.
+function editorTextFieldAllowed(field) {
+  if (!field || typeof field !== 'object' || !EDITOR_TEXT_ROLES.includes(field.role)) return false;
+  const nonEmpty = (l) => typeof l === 'string' && l.trim() !== '';
+  if (!nonEmpty(field.title) && !nonEmpty(field.description)) return false;
+  return ![field.title, field.description, field.placeholder].filter(nonEmpty).some((l) => /terminal/i.test(l));
+}
+
+const BANKING_KEYWORDS = /bank|banca|banking|ibank|netbank|paypal/i;
+const PASSWORD_PROMPT = /pass(word|phrase|code)?|parola|sudo|\bpin\b|one[- ]?time|otp|verification code|2fa|cod de verificare|token|secret|api[ _-]?key|private key|passcode/i;
+
+// A list entry may be a bare host or a URL ("https://myhealth.com/", "clinic.org/login", "*.bank.ro"):
+// keep only the hostname, lowercased, without a leading "www." or trailing dot. Unparseable -> null.
 function normalizeDomain(d) {
-  return String(d).trim().toLowerCase().replace(/^\*?\.+/, '').replace(/\.+$/, '');
+  let s = String(d == null ? '' : d).trim().toLowerCase().replace(/^\*?\.+/, '');
+  if (!s) return null;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//.test(s)) s = 'https://' + s;
+  let host;
+  try {
+    host = new URL(s).hostname;
+  } catch {
+    return null;
+  }
+  host = host.replace(/\.+$/, '').replace(/^www\./, '');
+  return host || null;
 }
 
 function normalizeName(s) {
@@ -38,16 +69,17 @@ function hostOf(url) {
 
 function createPolicy({ doNotWatchApps = [], doNotWatchDomains = [] } = {}) {
   let apps = new Set();
-  let userDomains = [];
+  let blockedDomains = [];
 
   function setLists({ doNotWatchApps: a = [], doNotWatchDomains: d = [] } = {}) {
     apps = new Set([...defaults.apps, ...a].filter(Boolean).map(normalizeName));
-    userDomains = d.filter(Boolean).map(normalizeDomain).filter(Boolean);
+    blockedDomains = [...BANKING_DOMAINS, ...defaults.domains, ...d].filter(Boolean).map(normalizeDomain).filter(Boolean);
   }
 
+  // host "www.x.com" also matches a bare entry "x.com" (the suffix rule covers it; stripping keeps it explicit)
   function domainBlocked(host) {
-    const all = [...BANKING_DOMAINS, ...defaults.domains, ...userDomains];
-    return all.some((d) => host === d || host.endsWith('.' + d));
+    const h = host.replace(/^www\./, '');
+    return blockedDomains.some((d) => h === d || h.endsWith('.' + d));
   }
 
   function canWatch(ctx = {}) {
@@ -87,4 +119,4 @@ function createPolicy({ doNotWatchApps = [], doNotWatchDomains = [] } = {}) {
   return { canWatch, typedTextAllowed, terminalCommandAllowed, setLists };
 }
 
-module.exports = { createPolicy, TERMINAL_BUNDLES, BROWSER_BUNDLES, PASSWORD_PROMPT };
+module.exports = { createPolicy, normalizeDomain, editorTextFieldAllowed, TERMINAL_BUNDLES, BROWSER_BUNDLES, EDITOR_BUNDLES, PASSWORD_PROMPT };

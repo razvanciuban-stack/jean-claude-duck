@@ -204,3 +204,39 @@ test('typed step flushed by a context switch is journaled without a screenshot r
   rec.handle({ type: 'typed', ts: 4, text: 'more', secure: false, field: field('Search'), isTerminal: false, visibleLine: null, flushReason: 'idle', ...safari });
   assert.strictEqual(shots.length, 1);
 });
+
+const vscode = { bundleId: 'com.microsoft.VSCode', appName: 'Code', window: 'main.js — app', url: null };
+const cursor = { bundleId: 'com.todesktop.230313mzl4w4u92', appName: 'Cursor', window: 'x', url: null };
+
+test('editor: sudo password typed in an unlabelled integrated terminal is dropped', () => {
+  const { dir, journal, rec } = setup();
+  rec.handle({ type: 'app', ...vscode });
+  // helper could not classify it as a terminal (no AX description), field unlabelled
+  rec.handle({ type: 'typed', ts: 1, text: 'hunter2pass', secure: false, field: { role: 'AXTextArea', title: null, placeholder: null, description: null }, isTerminal: false, visibleLine: null, ...vscode });
+  // no role at all
+  rec.handle({ type: 'typed', ts: 2, text: 'hunter3pass', secure: false, field: {}, isTerminal: false, visibleLine: null, ...cursor });
+  // wrong role with a label
+  rec.handle({ type: 'typed', ts: 3, text: 'hunter4pass', secure: false, field: { role: 'AXGroup', title: 'Editor', description: null }, isTerminal: false, visibleLine: null, ...vscode });
+  // label mentions terminal even though isTerminal was not set
+  rec.handle({ type: 'typed', ts: 4, text: 'hunter5pass', secure: false, field: { role: 'AXTextArea', title: null, description: 'Terminal 1, zsh' }, isTerminal: false, visibleLine: null, ...vscode });
+  assert.deepStrictEqual(journal.readSince(null), []);
+  assert.ok(!/hunter\dpass/.test(allJournalText(dir)));
+});
+
+test('editor: helper-flagged terminal follows command rules (password prompt line dropped)', () => {
+  const { dir, journal, rec } = setup();
+  rec.handle({ type: 'app', ...vscode });
+  rec.handle({ type: 'typed', ts: 1, text: 'hunter2pass', secure: false, field: { role: 'AXTextArea', description: 'Terminal 1' }, isTerminal: true, visibleLine: '[sudo] password for raz:', ...vscode });
+  rec.handle({ type: 'typed', ts: 2, text: 'npm test', secure: false, field: { role: 'AXTextArea', description: 'Terminal 1' }, isTerminal: true, visibleLine: '~/app $ npm test', ...vscode });
+  const steps = journal.readSince(null);
+  assert.deepStrictEqual(steps.map((s) => [s.action, s.value]), [['command', 'npm test']]);
+  assert.ok(!allJournalText(dir).includes('hunter2pass'));
+});
+
+test('editor: typed text kept from a positively classified non-terminal text field', () => {
+  const { journal, rec } = setup();
+  rec.handle({ type: 'app', ...vscode });
+  rec.handle({ type: 'typed', ts: 1, text: 'refactor', secure: false, field: { role: 'AXTextField', title: null, placeholder: 'Search', description: 'Search' }, isTerminal: false, visibleLine: null, ...vscode });
+  rec.handle({ type: 'typed', ts: 2, text: 'const x = 1', secure: false, field: { role: 'AXTextArea', title: null, description: 'The editor is not accessible at this time.' }, isTerminal: false, visibleLine: null, ...vscode });
+  assert.deepStrictEqual(journal.readSince(null).map((s) => s.value), ['refactor', 'const x = 1']);
+});

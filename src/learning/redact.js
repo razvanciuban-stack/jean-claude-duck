@@ -105,10 +105,11 @@ const RULES = [
     pattern: /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/gu,
     replace: () => '[API_KEY]',
   },
-  // Authorization / Proxy-Authorization headers: always redact the credential after the scheme, whatever it looks like
+  // Authorization / Proxy-Authorization headers: always redact the credential after the scheme, whatever it looks like.
+  // The value may be quoted, as in JSON / JS objects: "Authorization": "Bearer abc"
   {
     kind: 'API_KEY',
-    pattern: /((?:proxy-)?authorization["']?\s*[:=]\s*(?:(?:Bearer|Basic|Token|Digest|Negotiate|NTLM)\s+)?)([^\s,;"']+)/giu,
+    pattern: /((?:proxy-)?authorization["']?\s*[:=]\s*["']?(?:(?:Bearer|Basic|Token|Digest|Negotiate|NTLM)\s+)?)([^\s,;"']+)/giu,
     replace: (m, head, value) => (PLACEHOLDER.test(value) ? undefined : `${head}[API_KEY]`),
   },
   // Bare "Bearer <token>" outside a header: any 16+ char token

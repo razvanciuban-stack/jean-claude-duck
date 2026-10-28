@@ -31,6 +31,12 @@ enum AXInspector {
     static let terminalBundles: Set<String> = [
         "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable",
     ]
+    /// Code editors with integrated terminals (VS Code, Insiders, Cursor, VSCodium, Zed). Electron editors
+    /// only expose a useful AX tree once AXManualAccessibility is set, like Chromium browsers.
+    static let editorBundles: Set<String> = [
+        "com.microsoft.VSCode", "com.microsoft.VSCodeInsiders", "com.todesktop.230313mzl4w4u92",
+        "com.vscodium", "dev.zed.Zed",
+    ]
     static let menuRoles: Set<String> = ["AXMenuItem", "AXMenu", "AXMenuBarItem"]
 
     private static let systemWide: AXUIElement = {
@@ -150,9 +156,10 @@ enum AXInspector {
 
     static func isTerminal(bundleId: String?, element el: AXUIElement) -> Bool {
         if let bundleId, terminalBundles.contains(bundleId) { return true }
-        if let desc = string(el, kAXDescriptionAttribute as String),
-           desc.range(of: "terminal", options: .caseInsensitive) != nil {
-            return true
+        for name in [kAXDescriptionAttribute as String, kAXTitleAttribute as String] {
+            if let label = string(el, name), label.range(of: "terminal", options: .caseInsensitive) != nil {
+                return true
+            }
         }
         return false
     }
@@ -183,6 +190,9 @@ enum AXInspector {
         let pid = app.processIdentifier
         let appEl = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(appEl, 0.25)
+        if let bundleId = app.bundleIdentifier, editorBundles.contains(bundleId) {
+            enableManualAccessibility(appEl, pid: pid)
+        }
         let window = element(appEl, kAXFocusedWindowAttribute as String)
         let title = window.flatMap { string($0, kAXTitleAttribute as String) }
         var url: String?
@@ -199,10 +209,8 @@ enum AXInspector {
         if bundleId == "com.apple.Safari", let doc = string(window, kAXDocumentAttribute as String) {
             return doc
         }
-        if chromiumBundles.contains(bundleId), !manualAXEnabledPids.contains(pid) {
-            // Chromium only exposes its web tree to AX clients that ask for it.
-            AXUIElementSetAttributeValue(appElement, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-            manualAXEnabledPids.insert(pid)
+        if chromiumBundles.contains(bundleId) {
+            enableManualAccessibility(appElement, pid: pid)
         }
         if let cache = webAreaCache, let title, cache.pid == pid, cache.title == title,
            CFEqual(cache.window, window), let url = urlAttribute(cache.element) {
@@ -217,6 +225,13 @@ enum AXInspector {
               CFEqual(focusedNow, window) else { return nil }
         webAreaCache = (pid, window, title, webArea)
         return urlAttribute(webArea)
+    }
+
+    /// Chromium / Electron only expose their AX tree to clients that ask for it; set once per process.
+    private static func enableManualAccessibility(_ appElement: AXUIElement, pid: pid_t) {
+        guard !manualAXEnabledPids.contains(pid) else { return }
+        AXUIElementSetAttributeValue(appElement, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        manualAXEnabledPids.insert(pid)
     }
 
     private static func urlAttribute(_ el: AXUIElement) -> String? {

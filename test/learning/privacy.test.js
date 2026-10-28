@@ -1,7 +1,7 @@
 // privacy.test.js — privacy policy tests: do-not-watch apps, banking sites, terminals, password prompts
 const test = require('node:test');
 const assert = require('node:assert');
-const { createPolicy, TERMINAL_BUNDLES, BROWSER_BUNDLES } = require('../../src/learning/privacy');
+const { createPolicy, normalizeDomain, editorTextFieldAllowed, TERMINAL_BUNDLES, BROWSER_BUNDLES, EDITOR_BUNDLES } = require('../../src/learning/privacy');
 
 const CHROME = { bundleId: 'com.google.Chrome', appName: 'Google Chrome', isBrowser: true };
 
@@ -121,4 +121,62 @@ test('terminal command rejected when visibleLine null', () => {
 
 test('terminal command rejected when short typed text matches inside a password prompt', () => {
   assert.strictEqual(policy().terminalCommandAllowed({ typed: 'a', visibleLine: 'Password: ' }), false);
+});
+
+test('normalizeDomain keeps only the hostname of URL-shaped entries', () => {
+  assert.strictEqual(normalizeDomain('https://myhealth.com/'), 'myhealth.com');
+  assert.strictEqual(normalizeDomain('clinic.org/login'), 'clinic.org');
+  assert.strictEqual(normalizeDomain('  WWW.Example.COM. '), 'example.com');
+  assert.strictEqual(normalizeDomain('*.bank.ro'), 'bank.ro');
+  assert.strictEqual(normalizeDomain('http://portal.clinic.org:8443/a?b=c'), 'portal.clinic.org');
+  assert.strictEqual(normalizeDomain(''), null);
+  assert.strictEqual(normalizeDomain('http://'), null);
+});
+
+test('user domain entries written as URLs or with www. still block', () => {
+  const p = policy({ doNotWatchDomains: ['https://myhealth.com/', 'clinic.org/login', 'www.lab.example'] });
+  assert.strictEqual(p.canWatch({ ...CHROME, url: 'https://myhealth.com/records' }), false);
+  assert.strictEqual(p.canWatch({ ...CHROME, url: 'https://www.myhealth.com/' }), false);
+  assert.strictEqual(p.canWatch({ ...CHROME, url: 'https://clinic.org/' }), false);
+  assert.strictEqual(p.canWatch({ ...CHROME, url: 'https://portal.clinic.org/x' }), false);
+  assert.strictEqual(p.canWatch({ ...CHROME, url: 'https://lab.example/' }), false);
+  assert.strictEqual(p.canWatch({ ...CHROME, url: 'https://www.lab.example/' }), false);
+  assert.strictEqual(p.canWatch({ ...CHROME, url: 'https://notmyhealth.com/' }), true);
+});
+
+test('www. host matches a bare built-in entry', () => {
+  assert.strictEqual(policy().canWatch({ ...CHROME, url: 'https://www.revolut.com/' }), false);
+});
+
+test('default domains block password managers and WhatsApp Web', () => {
+  const p = policy();
+  for (const u of ['https://web.whatsapp.com/', 'https://vault.bitwarden.com/#/vault', 'https://bitwarden.com/',
+    'https://my.1password.com/', 'https://team.1password.com/', 'https://my.1password.eu/']) {
+    assert.strictEqual(p.canWatch({ ...CHROME, url: u }), false, u);
+  }
+});
+
+test('password prompt covers token / secret / API key / private key / passcode', () => {
+  const p = policy();
+  assert.strictEqual(p.terminalCommandAllowed({ typed: 's3cr3tvalue', visibleLine: 'Enter API token: s3cr3tvalue' }), false);
+  assert.strictEqual(p.terminalCommandAllowed({ typed: 'abc123', visibleLine: 'Secret: abc123' }), false);
+  for (const label of ['API key', 'api_key', 'Token', 'Client secret', 'Private key', 'Passcode']) {
+    assert.strictEqual(p.typedTextAllowed({ isTerminal: false, secure: false, fieldLabel: label }), false, label);
+  }
+  assert.strictEqual(p.typedTextAllowed({ isTerminal: false, secure: false, fieldLabel: 'File name' }), true);
+});
+
+test('editorTextFieldAllowed only for a labelled, non-terminal text field', () => {
+  assert.ok(EDITOR_BUNDLES.includes('com.microsoft.VSCode'));
+  assert.ok(EDITOR_BUNDLES.includes('com.todesktop.230313mzl4w4u92'));
+  assert.ok(EDITOR_BUNDLES.includes('dev.zed.Zed'));
+  assert.strictEqual(editorTextFieldAllowed({ role: 'AXTextField', title: 'Search' }), true);
+  assert.strictEqual(editorTextFieldAllowed({ role: 'AXTextArea', description: 'Editor content' }), true);
+  assert.strictEqual(editorTextFieldAllowed({ role: 'AXTextArea', description: 'Terminal 1' }), false);
+  assert.strictEqual(editorTextFieldAllowed({ role: 'AXTextArea', title: 'x', placeholder: 'terminal' }), false);
+  assert.strictEqual(editorTextFieldAllowed({ role: 'AXTextArea', placeholder: 'Search' }), false);
+  assert.strictEqual(editorTextFieldAllowed({ role: 'AXTextArea', title: '  ' }), false);
+  assert.strictEqual(editorTextFieldAllowed({ role: 'AXGroup', title: 'Search' }), false);
+  assert.strictEqual(editorTextFieldAllowed({}), false);
+  assert.strictEqual(editorTextFieldAllowed(null), false);
 });

@@ -1,7 +1,7 @@
 // step-recorder.js — turns helper events into privacy-filtered, redacted Steps and journals them
 
 const { redact, redactDeep } = require('./redact');
-const { TERMINAL_BUNDLES, BROWSER_BUNDLES } = require('./privacy');
+const { TERMINAL_BUNDLES, BROWSER_BUNDLES, EDITOR_BUNDLES, editorTextFieldAllowed } = require('./privacy');
 
 let counter = 0;
 function nextId() {
@@ -102,6 +102,9 @@ function createStepRecorder({ policy, journal, onWatchingChange = () => {}, onSc
       commit(build(event, c, 'command', { value: event.text, target: null }), { screenshot: wantShot });
       return;
     }
+    // Editors (VS Code, Cursor, Zed...) embed terminals that AX may not label: keep typed text only from a
+    // field positively classified as a non-terminal text field; anything else is dropped.
+    if (EDITOR_BUNDLES.includes(c.bundleId) && !editorTextFieldAllowed(f)) return;
     const labels = [f.title, f.placeholder, f.description].filter((l) => typeof l === 'string' && l);
     const checks = labels.length ? labels : [undefined];
     const ok = checks.every((fieldLabel) =>

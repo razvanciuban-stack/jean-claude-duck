@@ -9,5 +9,12 @@
     "net.whatsapp.WhatsApp",
     "desktop.WhatsApp"
   ],
-  "domains": []
+  "domains": [
+    "web.whatsapp.com",
+    "vault.bitwarden.com",
+    "bitwarden.com",
+    "my.1password.com",
+    "1password.com",
+    "1password.eu"
+  ]
 }
