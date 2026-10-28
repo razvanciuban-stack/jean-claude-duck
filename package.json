@@ -6,9 +6,9 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/",
-    "build": "electron-builder --mac",
+    "build": "npm run build:helper && electron-builder --mac",
     "build:helper": "swift build -c release --package-path native/mysthi-helper",
-    "build:dmg": "electron-builder --mac dmg"
+    "build:dmg": "npm run build:helper && electron-builder --mac dmg"
   },
   "build": {
     "productName": "Jean Claude Duck",
@@ -18,7 +18,14 @@
       "icon": "assets/icon.icns",
       "target": [
         "dmg"
-      ]
+      ],
+      "identity": "Mysthi Local Signing",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSAppleEventsUsageDescription": "Jean Claude Duck checks which app is in front so it can react to what you are doing."
+      }
     },
     "dmg": {
       "title": "Jean Claude Duck",
@@ -41,6 +48,12 @@
       "src/**/*",
       "assets/**/*",
       "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "native/mysthi-helper/.build/release/mysthi-helper",
+        "to": "mysthi-helper"
+      }
     ]
   },
   "devDependencies": {
