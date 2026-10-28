@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
 const petWindowManager = require('./src/windows/pet-window');
+const { createTrayIcon } = require('./src/windows/tray-icon');
 const claude = require('./src/services/claude');
 const systemInfo = require('./src/services/system-info');
 const activityMonitor = require('./src/services/activity-monitor');
@@ -164,9 +165,9 @@ function learningMenuItems() {
 }
 // --- end Learning ---
 
-function buildTrayMenu() {
-  if (!tray) return;
-  tray.setContextMenu(Menu.buildFromTemplate([
+// Same menu in the menu bar and when you right-click Mysthi
+function appMenuTemplate() {
+  return [
     {
       label: 'Show/Hide',
       click: () => {
@@ -180,7 +181,12 @@ function buildTrayMenu() {
       dialog.showMessageBox({ title: 'Jean Claude Duck', message: 'Jean Claude Duck v0.1.0\nA pixel-art desktop pet.' });
     }},
     { label: 'Quit', click: () => app.quit() },
-  ]));
+  ];
+}
+
+function buildTrayMenu() {
+  if (!tray) return;
+  tray.setContextMenu(Menu.buildFromTemplate(appMenuTemplate()));
 }
 
 // --- App lifecycle ---
@@ -228,10 +234,8 @@ function startApp() {
   });
 
   // Tray
-  const icon = nativeImage.createFromDataURL(
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAOklEQVQ4T2NkoBAwUqifAacBjP8ZGP4zMDAwMjAwMDEQAYYmF4wmA0YTEoGxkJqJiTgXDIIwGE0GAAA+HAkRm5K/wgAAAABJRU5ErkJggg=='
-  );
-  tray = new Tray(icon.resize({ width: 16, height: 16 }));
+  tray = new Tray(createTrayIcon());
+  tray.setToolTip('Mysthi');
   setupLearning();
   buildTrayMenu();
 
@@ -239,6 +243,13 @@ function startApp() {
   globalShortcut.register('CommandOrControl+Shift+S', () => {
     const win = petWindowManager.getWindow();
     if (win) win.isVisible() ? win.hide() : win.show();
+  });
+
+  // IPC: right-click on Mysthi → the same menu as the menu-bar icon
+  ipcMain.on('pet:context-menu', (event) => {
+    const petWin = petWindowManager.getWindow();
+    if (!petWin || petWin.isDestroyed() || event.sender !== petWin.webContents) return;
+    Menu.buildFromTemplate(appMenuTemplate()).popup({ window: petWin });
   });
 
   // IPC: track interactions for idle detection (clicks only animate Mysthi; there is no chat)

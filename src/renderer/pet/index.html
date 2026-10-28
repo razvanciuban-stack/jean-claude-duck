@@ -236,10 +236,17 @@
       ipcRenderer.send('slime:hit-test', { hit: !!hit });
     });
 
+    // --- Right-click: app menu (learning on/off, pause, show/hide, quit) ---
+    document.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      ipcRenderer.send('pet:context-menu');
+    });
+
     // --- Drag + Click handling ---
     let dragState = null;
 
     container.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return; // right-click opens the menu instead of starting a drag
       // Squish on press!
       squish(container);
       flashEyes('squish');
