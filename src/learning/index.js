@@ -302,10 +302,14 @@ function createLearning({
     return true;
   }
 
+  // Ollama can be slow to answer while it is busy describing screenshots, so one missed check
+  // isn't enough to call the model unavailable: it takes two misses in a row
+  let modelMisses = 0;
   async function checkModel() {
     let ok = false;
     try { ok = await d.isAvailable(TEXT_MODEL); } catch { ok = false; }
-    model = ok ? 'ok' : 'unavailable';
+    modelMisses = ok ? 0 : modelMisses + 1;
+    model = modelMisses >= 2 ? 'unavailable' : 'ok';
     update();
   }
 

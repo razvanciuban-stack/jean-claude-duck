@@ -78,7 +78,7 @@ async function chatJSON(args) {
 
 async function isAvailable(model) {
   try {
-    const body = await request('GET', '/api/tags', undefined, 5000);
+    const body = await request('GET', '/api/tags', undefined, 15000); // generous: Ollama answers slowly while generating
     const models = JSON.parse(body).models || [];
     return models.some((m) => m.name === model);
   } catch {

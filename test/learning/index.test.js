@@ -159,9 +159,20 @@ test('tick does not overlap, swallows errors, and its interval is cleared on dis
   assert.strictEqual(ctx.learning.isWatching(), false);
 });
 
+test('one missed model check is not enough to report the model unavailable', async () => {
+  let calls = 0;
+  const ctx = setup({ deps: { isAvailable: async () => (++calls === 1 ? false : true) } });
+  ctx.learning.enable();
+  await flush();
+  assert.strictEqual(ctx.learning.status().model, 'ok');
+  await ctx.learning.tick();
+  assert.strictEqual(ctx.learning.status().model, 'ok');
+});
+
 test('model availability shows in status', async () => {
   const ctx = setup({ deps: { isAvailable: async () => false } });
   ctx.learning.enable();
+  await flush();
   await ctx.learning.tick();
   assert.strictEqual(ctx.learning.status().model, 'unavailable');
   assert.strictEqual(ctx.learning.statusLabel(), 'Learning: model unavailable');
@@ -355,6 +366,7 @@ test('model unavailable does not close the eyes', async () => {
   const ctx = setup({ deps: { isAvailable: async () => false } });
   ctx.learning.enable();
   await flush();
+  await ctx.learning.tick();
   assert.strictEqual(ctx.learning.statusLabel(), 'Learning: model unavailable');
   assert.strictEqual(ctx.learning.isWatching(), true);
 });
