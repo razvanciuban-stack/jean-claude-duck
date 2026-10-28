@@ -22,7 +22,10 @@ test('vault.ensure seeds do-not-watch.md and loadDoNotWatch reads it back', () =
   assert.match(text, /## Websites/);
   const { apps, domains } = vault.loadDoNotWatch();
   assert.ok(apps.includes('com.1password.1password'));
-  assert.deepStrictEqual(domains, ['web.whatsapp.com', 'vault.bitwarden.com', 'bitwarden.com', 'my.1password.com', '1password.com', '1password.eu']);
+  assert.deepStrictEqual(domains, require('../../src/learning/data/default-do-not-watch.json').domains);
+  for (const site of ['web.whatsapp.com', '1password.com', 'facebook.com', 'instagram.com', 'x.com']) {
+    assert.ok(domains.includes(site), `${site} is blocked by default`);
+  }
 });
 
 test('ensure does not overwrite an existing do-not-watch.md', () => {

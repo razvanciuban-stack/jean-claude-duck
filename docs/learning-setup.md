@@ -26,7 +26,7 @@ Limits: other apps with built-in terminals (for example JetBrains IDEs or Hyper)
 
 These checks use pattern matching, so they can miss things. They are not a guarantee.
 
-- Apps and websites in `do-not-watch.md` are skipped (see below). It starts with a built-in list of password managers and messaging apps (and their websites: WhatsApp Web, Bitwarden, 1Password), and Mysthi also tries to recognise banking sites by domain and keywords.
+- Apps and websites in `do-not-watch.md` are skipped (see below). It starts with a built-in list of password managers, messaging apps (Messages, WhatsApp, Messenger, Telegram, Discord, Signal) and social media (Facebook, Instagram, Threads, X, TikTok, Snapchat, LinkedIn, Reddit, Pinterest, Tumblr, Bluesky, Mastodon), plus their websites, and Mysthi also tries to recognise banking sites by domain and keywords.
 - Text typed into a field labelled like a password prompt (password, `sudo`, PIN, verification code, token, secret, API key, private key, and similar) is not recorded.
 - Before text is saved, Mysthi tries to replace secrets with placeholders: `[PASSWORD]`, `[API_KEY]`, `[SECRET]`, `[PRIVATE_KEY]`, `[IP]`, `[IBAN]`, `[CARD]`, `[PHONE]`.
 
@@ -54,7 +54,7 @@ Tray menu, "Open lessons folder" opens `lessons/`.
 
 Open `~/ObsidianVault/mysthi/do-not-watch.md`. It has two sections, `## Apps` (macOS bundle ids, for example `com.1password.1password`) and `## Websites` (domains, for example `mybank.com`; subdomains and `www.` are included, and a pasted URL such as `https://mybank.com/login` is reduced to its domain). Add one `- item` per line and save. Mysthi re-reads the file about once a minute.
 
-The file is created once and never overwritten. If yours was created before the built-in website list grew (WhatsApp Web, Bitwarden, 1Password), those sites are still blocked; they just aren't listed in your file. Delete the file to have Mysthi write a fresh one with the current list.
+The file is created once and never overwritten. If yours was created before the built-in list grew (password-manager and social media sites, more messaging apps), those are still blocked; they just aren't listed in your file. Delete the file to have Mysthi write a fresh one with the current list.
 
 ## One-time setup checklist
 
