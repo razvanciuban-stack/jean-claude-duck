@@ -4,7 +4,7 @@ Mysthi is the learning side of Jean Claude Duck. While you work, it watches whic
 
 ## What it does and doesn't do
 
-- Everything stays on this Mac. Screenshots are described by a local model (Ollama, `qwen2.5vl:7b`). Nothing is sent to any server.
+- Everything stays on this Mac. Screenshots are described by a local model (Ollama, `qwen3-vl:8b`). Nothing is sent to any server.
 - It only learns while you are working. The lessons are built while you are idle (about 3 minutes without keyboard or mouse), not while you type.
 - A task becomes a confident lesson after you have done it 3 times.
 
@@ -66,7 +66,7 @@ macOS ties the Screen Recording, Accessibility and Input Monitoring permissions 
   xcode-select --install
   ```
   Then check `npm run build:helper` finishes without errors.
-- [ ] **b. Pull the model:** `ollama pull qwen2.5vl:7b` (expect `success`). Ollama must be running when you use learning.
+- [ ] **b. Pull the model:** `ollama pull qwen3-vl:8b` (expect `success`; needs Ollama 0.40 or newer — `brew upgrade ollama` if the pull says to update). Ollama must be running when you use learning.
 - [ ] **c. Create the signing certificate "Mysthi Local Signing":**
   1. Open Keychain Access.
   2. Menu bar: Keychain Access, Certificate Assistant, Create a Certificate...
@@ -107,7 +107,7 @@ macOS may ask for Automation access ("System Events") the first time; that is th
 
 ## Troubleshooting
 
-- **`Learning: model unavailable`:** start Ollama (open the Ollama app or run `ollama serve`) and check `ollama list` shows `qwen2.5vl:7b`; if not, `ollama pull qwen2.5vl:7b`.
+- **`Learning: model unavailable`:** start Ollama (open the Ollama app or run `ollama serve`) and check `ollama list` shows `qwen3-vl:8b`; if not, `ollama pull qwen3-vl:8b`.
 - **`Learning: missing permissions`:** System Settings, Privacy & Security. Turn Jean Claude Duck (or mysthi-helper) on under Screen Recording, Accessibility and Input Monitoring. If the "Mysthi Local Signing" certificate was recreated or renamed, macOS treats the app as new and asks for permissions again; grant them again.
 - **"Mysthi's watcher couldn't start":** the helper is missing or crashed, and learning turns itself off. Run `npm run build:helper` (if it fails, redo step a), or rebuild with `npm run build`, then choose Start learning again. In the packaged app the helper lives at `Jean Claude Duck.app/Contents/Resources/mysthi-helper`.
 - **Reset everything Mysthi has stored locally:** quit the app and delete `~/Library/Application Support/jean-claude-duck/learning`. Your notes in `~/ObsidianVault/mysthi/` are not touched; delete those yourself if you want them gone.
