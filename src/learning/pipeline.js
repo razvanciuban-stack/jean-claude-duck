@@ -1,0 +1,149 @@
+// pipeline.js — idle-time learning pipeline: journal -> segments -> tasks -> lessons/knowledge -> daily log
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const { splitAtBoundaries, groupTasks } = require('./segmenter');
+const { loadLessons, learnTask } = require('./lessons');
+const { extractKnowledge } = require('./knowledge');
+const { isAvailable } = require('../services/ollama');
+const { appendDailyLog } = require('./reports');
+const { IDLE_THRESHOLD_MS, SEGMENT_GAP_MS, TEXT_MODEL } = require('./config');
+
+const WEEKLY_FILE = 'weekly.json';
+const CONNECTION_CODES = new Set(['ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'ETIMEDOUT', 'EHOSTUNREACH', 'EAI_AGAIN', 'EPIPE']);
+
+const REAL_DEPS = { isAvailable, groupTasks, loadLessons, learnTask, extractKnowledge };
+
+function emptyWeek() {
+  return { enabledAt: null, lastReportAt: null, newLessons: [], updated: [], facts: [] };
+}
+
+function readWeek(stateDir) {
+  try {
+    const w = JSON.parse(fs.readFileSync(path.join(stateDir, WEEKLY_FILE), 'utf8'));
+    return { ...emptyWeek(), ...w };
+  } catch {
+    return emptyWeek();
+  }
+}
+
+function writeWeek(stateDir, week) {
+  fs.mkdirSync(stateDir, { recursive: true });
+  const full = path.join(stateDir, WEEKLY_FILE);
+  const tmp = `${full}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(week, null, 2), { mode: 0o600 });
+    try { fs.chmodSync(tmp, 0o600); } catch { /* best effort */ }
+    fs.renameSync(tmp, full);
+  } catch (err) {
+    try { fs.unlinkSync(tmp); } catch { /* already gone */ }
+    throw err;
+  }
+}
+
+// results: { lessons: {kind, lesson, changes}[], facts: {topic, fact}[] }
+function recordWeek(stateDir, results) {
+  const week = readWeek(stateDir);
+  for (const r of (results && results.lessons) || []) {
+    if (!r || !r.lesson || !r.lesson.slug) continue;
+    const slug = r.lesson.slug;
+    if (r.kind === 'new') {
+      if (!week.newLessons.includes(slug)) week.newLessons.push(slug);
+    } else {
+      const entry = week.updated.find((u) => u.slug === slug);
+      const changes = r.changes || [];
+      if (entry) entry.changes.push(...changes.filter((c) => !entry.changes.includes(c)));
+      else week.updated.push({ slug, changes: [...changes] });
+    }
+  }
+  for (const f of (results && results.facts) || []) {
+    if (!f) continue;
+    if (!week.facts.some((x) => x.topic === f.topic && x.fact === f.fact)) week.facts.push({ topic: f.topic, fact: f.fact });
+  }
+  writeWeek(stateDir, week);
+}
+
+function localDate(ms) {
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function isConnectionError(err) {
+  if (!err) return false;
+  if (CONNECTION_CODES.has(err.code)) return true;
+  return /ECONNREFUSED|ECONNRESET|ENOTFOUND|EHOSTUNREACH|socket hang up|fetch failed|Ollama timeout/i.test(String(err.message || ''));
+}
+
+function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, getIdleMs }) {
+  const d = { ...REAL_DEPS, ...deps };
+  const state = { lastRunAt: null, lastResult: null, pending: 0, running: false };
+
+  async function processSegment(segment, today) {
+    const tasks = await d.groupTasks(segment);
+    if (!tasks) throw Object.assign(new Error('Task grouping unavailable'), { grouping: true });
+    let lessons = d.loadLessons(vault);
+    const results = [];
+    for (const task of tasks) {
+      if (!task.isTask) continue;
+      const ids = new Set(task.stepIds);
+      const steps = segment.filter((s) => ids.has(s.id));
+      const res = await d.learnTask({ task, steps, lessons, vault, today });
+      results.push(res);
+      lessons = d.loadLessons(vault);
+    }
+    const facts = await d.extractKnowledge({ steps: segment, vault, today });
+    appendDailyLog({ vault, date: today, lessons: results, facts });
+    recordWeek(stateDir, { lessons: results, facts });
+    journal.markProcessed(segment[segment.length - 1].id);
+  }
+
+  async function run() {
+    if (getIdleMs() < IDLE_THRESHOLD_MS) return 'not-idle';
+    const steps = journal.readSince(journal.lastProcessed());
+    state.pending = steps.length;
+    if (!steps.length) return 'nothing';
+    const segments = splitAtBoundaries(steps, SEGMENT_GAP_MS);
+    const last = segments[segments.length - 1];
+    if (now() - last[last.length - 1].ts < SEGMENT_GAP_MS) segments.pop(); // may still be in progress
+    if (!segments.length) return 'nothing';
+    if (!(await d.isAvailable(TEXT_MODEL))) return 'model-unavailable';
+
+    const today = localDate(now());
+    for (const segment of segments) {
+      try {
+        await processSegment(segment, today);
+      } catch (err) {
+        if (isConnectionError(err)) {
+          state.lastResult = 'model-unavailable';
+          return 'model-unavailable';
+        }
+        state.lastResult = `ran (stopped: ${err && err.message ? err.message : err})`;
+        return 'ran';
+      }
+    }
+    return 'ran';
+  }
+
+  async function runIfIdle() {
+    if (state.running) return 'nothing';
+    state.running = true;
+    state.lastResult = null;
+    try {
+      const result = await run();
+      if (!state.lastResult) state.lastResult = result;
+      return result;
+    } finally {
+      state.lastRunAt = now();
+      state.running = false;
+    }
+  }
+
+  function status() {
+    return { ...state };
+  }
+
+  return { runIfIdle, status };
+}
+
+module.exports = { createPipeline, recordWeek, readWeek };
