@@ -399,10 +399,12 @@
       }, 4000);
     }
 
-    ipcRenderer.on('pet:reaction', (event, { text }) => {
+    // She's a cat: whatever caught her attention, all she says is "Miaw!"
+    const MIAWS = ['Miaw!', 'Miaw!', 'Miaw!', 'Miaw~', 'Miaw miaw!'];
+    ipcRenderer.on('pet:reaction', () => {
       // Only queue if not already queued (max 2 in queue)
       if (reactionQueue.length < 2) {
-        reactionQueue.push(text);
+        reactionQueue.push(MIAWS[Math.floor(Math.random() * MIAWS.length)]);
       }
       showNextReaction();
     });
