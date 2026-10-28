@@ -113,6 +113,31 @@ test('leaves in-progress trailing segment', async () => {
   assert.strictEqual(ctx.journal.lastProcessed(), 'a');
 });
 
+test('runNow processes everything while the user is active, including the stretch in progress', async () => {
+  const ctx = setup();
+  ctx.journal.append(step('a', T0));
+  ctx.journal.append(step('b', T0 + 59 * MIN)); // still in progress
+  const { deps, calls } = fakeDeps();
+  const p = make(ctx, deps, { getIdleMs: () => 1000 }); // not idle
+  assert.strictEqual(await p.runNow(), 'ran');
+  assert.strictEqual(calls.learn.length, 2);
+  assert.strictEqual(ctx.journal.lastProcessed(), 'b');
+  assert.ok(ctx.vault.read(`log/${new Date(T0).getFullYear()}-10-28.md`), 'daily log written');
+});
+
+test('runNow while a run is in progress reports busy', async () => {
+  const ctx = setup();
+  ctx.journal.append(step('a', T0));
+  let release;
+  const { deps } = fakeDeps({ groupTasks: () => new Promise((r) => { release = () => r([]); }) });
+  const p = make(ctx, deps);
+  const first = p.runNow();
+  await new Promise((r) => setImmediate(r));
+  assert.strictEqual(await p.runNow(), 'busy');
+  release();
+  await first;
+});
+
 test('null grouping stops without advancing', async () => {
   const ctx = setup();
   ctx.journal.append(step('a', T0));

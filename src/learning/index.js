@@ -331,6 +331,25 @@ function createLearning({
     }
   }
 
+  // "Make notes now": turn everything recorded so far into notes without waiting for idle time
+  let makingNotes = false;
+  async function makeNotesNow() {
+    if (!enabled || !pipeline) return { result: 'off' };
+    if (makingNotes) return { result: 'busy' };
+    makingNotes = true;
+    update();
+    try {
+      const result = await pipeline.runNow();
+      return { result, ...pipeline.status() };
+    } catch {
+      console.error('learning: make notes failed');
+      return { result: 'failed' };
+    } finally {
+      makingNotes = false;
+      update();
+    }
+  }
+
   // App quit: stop the helper without changing the persisted on/off choice
   function shutdown() {
     stopRuntime();
@@ -341,6 +360,8 @@ function createLearning({
     enable,
     disable,
     togglePause,
+    makeNotesNow,
+    isMakingNotes: () => makingNotes,
     tick,
     shutdown,
     isEnabled: () => enabled,

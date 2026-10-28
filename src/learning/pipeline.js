@@ -112,7 +112,7 @@ function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, g
   const d = { ...REAL_DEPS, ...deps };
   const state = { lastRunAt: null, lastResult: null, pending: 0, running: false };
 
-  async function processSegment(segment, today) {
+  async function processSegment(segment, today, force) {
     const lastId = segment[segment.length - 1].id;
     let prog = readProgress(stateDir);
     if (!prog || prog.segmentLastStepId !== lastId) prog = { segmentLastStepId: lastId, learnedTaskKeys: [], results: [], facts: null, attempts: 0 };
@@ -135,7 +135,7 @@ function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, g
       const key = [...task.stepIds].sort().join(',');
       if (prog.learnedTaskKeys.includes(key)) continue;
       if (!isEnabled()) throw new Interrupted('disabled');
-      if (getIdleMs() < IDLE_THRESHOLD_MS) throw new Interrupted('not-idle');
+      if (!force && getIdleMs() < IDLE_THRESHOLD_MS) throw new Interrupted('not-idle');
       const res = await d.learnTask({ task, steps, lessons, vault, today });
       prog.learnedTaskKeys.push(key);
       prog.results.push({ kind: res.kind, lesson: { slug: res.lesson.slug, title: res.lesson.title }, changes: res.changes || [] });
@@ -158,22 +158,23 @@ function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, g
     try { return !!(await d.isAvailable(TEXT_MODEL)); } catch { return false; }
   }
 
-  async function run() {
-    if (getIdleMs() < IDLE_THRESHOLD_MS) return 'not-idle';
+  // force: the user asked for notes now — don't wait for idle, and include the stretch still in progress
+  async function run(force) {
+    if (!force && getIdleMs() < IDLE_THRESHOLD_MS) return 'not-idle';
     const steps = journal.readSince(journal.lastProcessed());
     state.pending = steps.length;
     if (!steps.length) return 'nothing';
     const segments = splitAtBoundaries(steps, SEGMENT_GAP_MS);
     const last = segments[segments.length - 1];
-    if (now() - last[last.length - 1].ts < SEGMENT_GAP_MS) segments.pop(); // may still be in progress
+    if (!force && now() - last[last.length - 1].ts < SEGMENT_GAP_MS) segments.pop(); // may still be in progress
     if (!segments.length) return 'nothing';
     if (!(await d.isAvailable(TEXT_MODEL))) return 'model-unavailable';
 
     const today = localDate(now());
     for (const segment of segments) {
-      if (getIdleMs() < IDLE_THRESHOLD_MS) return 'not-idle';
+      if (!force && getIdleMs() < IDLE_THRESHOLD_MS) return 'not-idle';
       try {
-        await processSegment(segment, today);
+        await processSegment(segment, today, force);
       } catch (err) {
         if (err && err.interrupted) {
           state.lastResult = err.interrupted;
@@ -200,12 +201,12 @@ function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, g
     return 'ran';
   }
 
-  async function runIfIdle() {
-    if (state.running) return 'nothing';
+  async function runOnce(force) {
+    if (state.running) return 'busy';
     state.running = true;
     state.lastResult = null;
     try {
-      const result = await run();
+      const result = await run(force);
       if (!state.lastResult) state.lastResult = result;
       return result;
     } finally {
@@ -214,11 +215,22 @@ function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, g
     }
   }
 
+  // Every minute: only when the user has been idle for a while
+  async function runIfIdle() {
+    const result = await runOnce(false);
+    return result === 'busy' ? 'nothing' : result;
+  }
+
+  // "Make notes now" from the menu: process everything recorded so far, idle or not
+  function runNow() {
+    return runOnce(true);
+  }
+
   function status() {
     return { ...state };
   }
 
-  return { runIfIdle, status };
+  return { runIfIdle, runNow, status };
 }
 
 module.exports = { createPipeline, recordWeek, readWeek, writeWeek, isConnectionError };

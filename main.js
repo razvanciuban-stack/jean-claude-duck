@@ -166,6 +166,11 @@ function learningMenuItems() {
       click: () => learning.togglePause(),
     },
     {
+      label: learning.isMakingNotes() ? 'Making notes…' : 'Make notes now',
+      enabled: on && !learning.isMakingNotes(),
+      click: () => makeNotesNow(),
+    },
+    {
       label: 'Open lessons folder',
       click: () => {
         const dir = path.join(VAULT_DIR, 'lessons');
@@ -175,6 +180,21 @@ function learningMenuItems() {
     },
     { type: 'separator' },
   ];
+}
+// Runs the note-making step right away and says how it went
+async function makeNotesNow() {
+  buildTrayMenu();
+  const r = await learning.makeNotesNow();
+  buildTrayMenu();
+  const body = {
+    ran: 'Done — your notes are in the Mysthi folder of your vault.',
+    nothing: 'Nothing new to write up yet.',
+    'model-unavailable': "Couldn't reach the local model (Ollama). Nothing was lost; try again in a moment.",
+    busy: 'Already making notes — hang on.',
+  }[r.result] || "Couldn't finish making notes this time. Nothing was lost; she'll try again when you're idle.";
+  const n = new Notification({ title: 'Mysthi', body });
+  n.on('click', () => shell.openPath(VAULT_DIR));
+  n.show();
 }
 // --- end Learning ---
 
