@@ -1,0 +1,13 @@
+{
+  "apps": [
+    "com.1password.1password",
+    "com.agilebits.onepassword7",
+    "com.bitwarden.desktop",
+    "com.apple.keychainaccess",
+    "com.apple.Passwords",
+    "com.apple.MobileSMS",
+    "net.whatsapp.WhatsApp",
+    "desktop.WhatsApp"
+  ],
+  "domains": []
+}
