@@ -3,66 +3,102 @@
 <head>
   <meta charset="UTF-8">
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { overflow: hidden; background: transparent; width: 300px; height: 250px; font-family: monospace; }
-
-    #bubble {
-      width: 280px;
-      margin: 10px auto;
-      background: #1a1a2e;
-      border: 3px solid #fbbf24;
-      border-radius: 4px;
-      padding: 12px;
-      image-rendering: pixelated;
-      transition: opacity 0.5s;
+    /* Mysthi's palette: warm paper, ink black, soft greys */
+    :root {
+      --paper: #f7f5f1;
+      --ink: #161514;
+      --muted: #8a8680;
+      --line: #e2ded6;
+      --field: #ffffff;
     }
 
-    /* Pixel-art speech bubble tail */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      overflow: hidden; background: transparent; width: 300px; height: 250px;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    /* The window sits above the pet: keep the bubble at the bottom so its tail points at her */
+    body { display: flex; align-items: flex-end; justify-content: center; padding: 0 10px 16px; }
+
+    #bubble {
+      position: relative;
+      width: 100%;
+      background: var(--paper);
+      border: 1px solid rgba(22, 21, 20, 0.08);
+      border-radius: 16px;
+      padding: 14px 14px 12px;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.12);
+      animation: pop-in 0.18s ease-out;
+    }
+    @keyframes pop-in { from { opacity: 0; transform: translateY(6px) scale(0.97); } to { opacity: 1; transform: none; } }
+
+    /* Speech tail pointing down at Mysthi */
     #bubble::after {
       content: '';
       position: absolute;
-      bottom: -8px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 0; height: 0;
-      border-left: 8px solid transparent;
-      border-right: 8px solid transparent;
-      border-top: 8px solid #fbbf24;
+      bottom: -6px; left: 50%;
+      width: 12px; height: 12px;
+      background: var(--paper);
+      border-right: 1px solid rgba(22, 21, 20, 0.08);
+      border-bottom: 1px solid rgba(22, 21, 20, 0.08);
+      border-bottom-right-radius: 3px;
+      transform: translateX(-50%) rotate(45deg);
     }
 
     #response-text {
-      color: #fbbf24;
-      font-size: 13px;
-      line-height: 1.4;
-      min-height: 40px;
-      max-height: 140px;
+      color: var(--ink);
+      font-size: 13.5px;
+      line-height: 1.45;
+      padding-right: 22px; /* room for the close button */
+      min-height: 20px;
+      max-height: 130px;
       overflow-y: auto;
       word-wrap: break-word;
       word-break: break-word;
       white-space: pre-wrap;
     }
+    #response-text.hint { color: var(--muted); }
+    #response-text::-webkit-scrollbar { width: 4px; }
+    #response-text::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
+
+    /* Three pulsing dots while she thinks */
+    .dots { display: inline-flex; gap: 5px; padding: 6px 0; }
+    .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink); opacity: 0.3; animation: dot 1.2s infinite; }
+    .dots i:nth-child(2) { animation-delay: 0.2s; }
+    .dots i:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dot { 0%, 60%, 100% { opacity: 0.3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
 
     #chat-input {
       width: 100%;
-      margin-top: 8px;
-      padding: 6px 8px;
-      background: #0a0a1a;
-      border: 2px solid #fbbf24;
-      border-radius: 2px;
-      color: #fbbf24;
-      font-family: monospace;
-      font-size: 13px;
+      margin-top: 10px;
+      padding: 9px 12px;
+      background: var(--field);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--ink);
+      font: inherit;
+      font-size: 13.5px;
       outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
+    #chat-input::placeholder { color: #a7a39b; }
+    #chat-input:focus { border-color: var(--ink); box-shadow: 0 0 0 3px rgba(22, 21, 20, 0.08); }
 
-    #chat-input::placeholder { color: #b47e14; }
-    #chat-input:focus { border-color: #fcd34d; }
+    #close-btn {
+      position: absolute; top: 9px; right: 9px;
+      width: 22px; height: 22px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--muted); font-size: 15px; line-height: 1; cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    #close-btn:hover { background: #ebe7e0; color: var(--ink); }
   </style>
 </head>
 <body>
-  <div id="bubble" style="position:relative;">
-    <div id="response-text">Click here and type to chat!</div>
-    <input id="chat-input" type="text" placeholder="Say something..." autofocus />
+  <div id="bubble">
+    <div id="response-text" class="hint">Type to chat with me</div>
+    <input id="chat-input" type="text" placeholder="Say something…" autofocus />
   </div>
   <script src="bubble.js"></script>
   <script>init();</script>

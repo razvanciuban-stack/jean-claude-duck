@@ -19,7 +19,8 @@ function create(petWindow) {
   const bubbleHeight = 250;
   const nearTop = petY - displayY < 270;
   const bx = petX + 90 - bubbleWidth / 2;
-  const by = nearTop ? petY + 180 : petY - bubbleHeight - 10;
+  // Above: overlap the pet window's empty top so the bubble's tail sits just over Mysthi's ears
+  const by = nearTop ? petY + 180 : petY - bubbleHeight + 40;
 
   chatWindow = new BrowserWindow({
     width: bubbleWidth,

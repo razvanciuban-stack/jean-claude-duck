@@ -5,6 +5,7 @@ let isTyping = false;
 function typewriter(element, text, speed = 25) {
   return new Promise((resolve) => {
     isTyping = true;
+    element.classList.remove('hint');
     element.textContent = '';
 
     if (!text || text.length === 0) {
@@ -33,14 +34,12 @@ function init() {
   const responseEl = document.getElementById('response-text');
   const bubble = document.getElementById('bubble');
 
-  // Add close button
+  // Add close button (styled in index.html)
   const closeBtn = document.createElement('div');
-  closeBtn.textContent = '✕';
-  closeBtn.style.cssText = 'position:absolute;top:6px;right:10px;cursor:pointer;font-size:14px;color:#888;z-index:10;';
+  closeBtn.id = 'close-btn';
+  closeBtn.textContent = '×';
+  closeBtn.title = 'Close (Esc)';
   closeBtn.addEventListener('click', () => ipcRenderer.send('chat:dismiss'));
-  closeBtn.addEventListener('mouseenter', () => closeBtn.style.color = '#fff');
-  closeBtn.addEventListener('mouseleave', () => closeBtn.style.color = '#888');
-  bubble.style.position = 'relative';
   bubble.appendChild(closeBtn);
 
   input.focus();
@@ -53,7 +52,8 @@ function init() {
     if (e.key === 'Enter' && input.value.trim()) {
       const message = input.value.trim();
       input.value = '';
-      responseEl.textContent = '💭 thinking...';
+      responseEl.classList.remove('hint');
+      responseEl.innerHTML = '<span class="dots"><i></i><i></i><i></i></span>';
       ipcRenderer.send('chat:send', { message });
     }
   });
