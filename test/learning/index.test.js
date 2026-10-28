@@ -11,9 +11,9 @@ const { readWeek, writeWeek } = require('../../src/learning/pipeline');
 const T0 = new Date(2026, 9, 28, 10, 0, 0).getTime();
 
 class FakeHelper extends EventEmitter {
-  constructor(binPath) { super(); this.binPath = binPath; this.sent = []; this.started = false; this.stopped = false; }
-  start() { this.started = true; }
-  send(cmd) { this.sent.push(cmd); return true; }
+  constructor(binPath) { super(); this.binPath = binPath; this.sent = []; this.started = false; this.stopped = false; this.sendOk = true; }
+  start() { this.started = true; if (FakeHelper.dieOnStart) this.emit('dead'); }
+  send(cmd) { this.sent.push(cmd); return this.sendOk; }
   stop() { this.stopped = true; }
 }
 
@@ -226,6 +226,10 @@ test('do-not-watch reload closes eyes in a blocked app', async () => {
   assert.strictEqual(ctx.learning.isWatching(), false);
   assert.deepStrictEqual(ctx.watching, [true, false]);
   assert.strictEqual(ctx.learning.isEnabled(), true);
+  assert.strictEqual(ctx.learning.statusLabel(), 'Learning: not watching this app');
+  ctx.helpers[0].emit('event', { type: 'app', ts: T0, bundleId: 'com.apple.finder', appName: 'Finder', window: 'w' });
+  assert.strictEqual(ctx.learning.statusLabel(), 'Learning: watching');
+  assert.strictEqual(ctx.learning.isWatching(), true);
 });
 
 test('dead helper turns learning off and reports once', () => {
@@ -247,4 +251,70 @@ test('statusLine maps every state', () => {
   assert.strictEqual(statusLine({ enabled: true, paused: false, permissions: { screen: true, accessibility: false, input: true }, model: 'unavailable' }), 'Learning: missing permissions');
   assert.strictEqual(statusLine({ enabled: true, paused: false, permissions: null, model: 'unavailable' }), 'Learning: model unavailable');
   assert.strictEqual(statusLine({ enabled: true, paused: false, permissions: null, model: 'ok' }), 'Learning: watching');
+  assert.strictEqual(statusLine({ enabled: true, paused: false, permissions: null, model: 'unavailable', context: 'blocked' }), 'Learning: not watching this app');
+});
+
+test('restarted helper is re-paused', () => {
+  const ctx = setup();
+  ctx.learning.enable();
+  const h = ctx.helpers[0];
+  h.emit('spawned'); // not paused: nothing sent
+  assert.ok(!h.sent.some((c) => c.cmd === 'pause'));
+  ctx.learning.togglePause();
+  h.sent.length = 0;
+  h.emit('spawned'); // auto-restart while paused
+  assert.deepStrictEqual(h.sent, [{ cmd: 'pause' }]);
+  h.sendOk = false;
+  h.emit('spawned'); // pause cannot be delivered -> helper stopped
+  assert.ok(h.stopped);
+  assert.strictEqual(ctx.learning.isWatching(), false);
+  assert.strictEqual(ctx.learning.statusLabel(), 'Learning: paused');
+});
+
+test('undeliverable pause stops the helper and resume restarts it', () => {
+  const ctx = setup();
+  ctx.learning.enable();
+  const h = ctx.helpers[0];
+  h.sendOk = false;
+  assert.strictEqual(ctx.learning.togglePause(), true);
+  assert.ok(h.stopped);
+  assert.strictEqual(ctx.learning.status().paused, true);
+  assert.strictEqual(ctx.learning.isWatching(), false);
+  assert.strictEqual(ctx.intervals[0].cleared, true);
+  h.emit('event', { type: 'click', ts: T0, bundleId: 'com.apple.finder', appName: 'Finder', window: 'w', target: { title: 'x' } });
+  assert.ok(!h.sent.some((c) => c.cmd === 'screenshot'));
+  assert.strictEqual(ctx.learning.togglePause(), true); // resume -> fresh helper
+  assert.strictEqual(ctx.helpers.length, 2);
+  assert.ok(ctx.helpers[1].started);
+  assert.strictEqual(ctx.learning.isWatching(), true);
+  assert.strictEqual(ctx.learning.statusLabel(), 'Learning: watching');
+});
+
+test('failed enable/start turns learning off and reports', () => {
+  const boom = () => { throw new Error('no'); };
+  const ctx = setup({ deps: { createHelper: boom } });
+  ctx.learning.enable();
+  assert.strictEqual(ctx.learning.isEnabled(), false);
+  assert.strictEqual(ctx.store.get('learning.enabled'), false);
+  assert.strictEqual(ctx.unavailable, 1);
+  assert.strictEqual(ctx.learning.statusLabel(), 'Learning: off');
+
+  const ctx2 = setup({ store: fakeStore({ 'learning.enabled': true }), deps: { createHelper: boom } });
+  ctx2.learning.start();
+  assert.strictEqual(ctx2.learning.isEnabled(), false);
+  assert.strictEqual(ctx2.unavailable, 1);
+});
+
+test('helper dying synchronously in start does not leak the interval', () => {
+  FakeHelper.dieOnStart = true;
+  try {
+    const ctx = setup();
+    ctx.learning.enable();
+    assert.strictEqual(ctx.learning.isEnabled(), false);
+    assert.strictEqual(ctx.intervals.length, 0);
+    assert.deepStrictEqual(ctx.helpers[0].sent, []);
+    assert.strictEqual(ctx.unavailable, 1);
+  } finally {
+    FakeHelper.dieOnStart = false;
+  }
 });

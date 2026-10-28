@@ -126,17 +126,23 @@ test('HelperClient emits parsed lines, then dead for a missing binary', async ()
   fs.chmodSync(bin, 0o755);
   const c = new HelperClient(bin);
   const events = [];
+  let spawned = 0;
   c.on('event', (e) => events.push(e.type));
+  c.on('spawned', () => { spawned++; });
   const dead = new Promise((r) => c.once('dead', r));
   c.start();
   await dead;
   assert.ok(events.includes('permissions') && events.includes('app'));
+  assert.strictEqual(spawned, 2); // initial spawn + one auto-restart
   assert.strictEqual(events.length >= 2, true);
 
   const missing = new HelperClient(path.join(dir, 'nope'));
+  let spawned2 = 0;
+  missing.on('spawned', () => { spawned2++; });
   const dead2 = new Promise((r) => missing.once('dead', r));
   missing.start();
   await dead2;
+  assert.strictEqual(spawned2, 0);
 });
 
 test('HelperClient.send writes a JSON line to the child stdin', async () => {

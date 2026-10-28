@@ -41,11 +41,12 @@ function missingPermissions(perms) {
   return PERMISSIONS.filter((p) => perms[p.key] === false);
 }
 
-// Priority: off > paused > missing permissions > model unavailable > watching
-function statusLine({ enabled, paused, permissions, model } = {}) {
+// Priority: off > paused > missing permissions > do-not-watch context > model unavailable > watching
+function statusLine({ enabled, paused, permissions, model, context } = {}) {
   if (!enabled) return 'Learning: off';
   if (paused) return 'Learning: paused';
   if (missingPermissions(permissions).length) return 'Learning: missing permissions';
+  if (context === 'blocked') return 'Learning: not watching this app';
   if (model === 'unavailable') return 'Learning: model unavailable';
   return 'Learning: watching';
 }
@@ -91,7 +92,7 @@ function createLearning({
   let reportedDead = false;
 
   function status() {
-    return { enabled, paused, permissions: permissions && { ...permissions }, model };
+    return { enabled, paused, permissions: permissions && { ...permissions }, model, context: contextAllowed ? 'allowed' : 'blocked' };
   }
 
   function update() {
@@ -154,14 +155,19 @@ function createLearning({
     }
   }
 
-  function onHelperDead(h) {
-    if (h !== helper) return;
+  // Helper died, or the runtime could not be built: turn learning off and tell the user once
+  function fail() {
     console.error('learning: helper unavailable');
     disable();
     if (!reportedDead) {
       reportedDead = true;
       onHelperUnavailable();
     }
+  }
+
+  function onHelperDead(h) {
+    if (h !== helper) return;
+    fail();
   }
 
   function startRuntime() {
@@ -180,7 +186,15 @@ function createLearning({
     helper = h;
     h.on('event', (event) => onHelperEvent(h, event));
     h.on('dead', () => onHelperDead(h));
+    // A restarted helper comes up unpaused: re-apply the pause, and if that cannot be delivered stop it
+    h.on('spawned', () => {
+      if (h === helper && paused && !h.send({ cmd: 'pause' })) {
+        stopRuntime();
+        update();
+      }
+    });
     h.start();
+    if (helper !== h) return; // died synchronously; fail() already cleaned up
     interval = d.setInterval(() => { tick(); }, TICK_MS);
     if (interval && typeof interval.unref === 'function') interval.unref();
   }
@@ -195,7 +209,7 @@ function createLearning({
     recorder = null;
     pipeline = null;
     journal = null;
-    paused = false;
+    contextAllowed = true;
     permissions = null;
     onboarding = false;
   }
@@ -207,8 +221,8 @@ function createLearning({
       vault.ensure();
       startRuntime();
     } catch {
-      console.error('learning: could not start');
-      stopRuntime();
+      fail();
+      return;
     }
     update();
   }
@@ -227,8 +241,8 @@ function createLearning({
         helper.send({ cmd: 'request-permissions' });
       }
     } catch {
-      console.error('learning: could not start');
-      stopRuntime();
+      fail();
+      return;
     }
     update();
     checkModel().catch(() => {});
@@ -236,18 +250,36 @@ function createLearning({
 
   function disable() {
     enabled = false;
+    paused = false;
     store.set(STORE_KEY, false);
     stopRuntime();
     update();
   }
 
-  // Pausing stops capture in the helper and drops queued screenshots; resuming starts a fresh queue
+  // Pausing stops capture in the helper and drops queued screenshots; resuming starts a fresh queue.
+  // If the pause cannot be delivered the helper is stopped (still paused); resuming then restarts it.
   function togglePause() {
-    if (!enabled || !helper) return false;
+    if (!enabled) return false;
+    if (!helper) {
+      if (!paused) return false;
+      paused = false;
+      try {
+        startRuntime();
+      } catch {
+        fail();
+        return true;
+      }
+      update();
+      return true;
+    }
     paused = !paused;
-    helper.send({ cmd: paused ? 'pause' : 'resume' });
-    if (paused) stopVision();
-    else startVision();
+    if (paused) {
+      stopVision();
+      if (!helper.send({ cmd: 'pause' })) stopRuntime();
+    } else {
+      helper.send({ cmd: 'resume' });
+      startVision();
+    }
     update();
     return true;
   }

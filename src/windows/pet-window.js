@@ -9,6 +9,7 @@ let windowStartPos = null;
 let isDragging = false;
 let eyeTrackInterval = null;
 let learningTogglePauseHandler = null;
+let learningIpcRegistered = false;
 
 // --- Wandering state ---
 let wanderState = 'idle'; // 'idle' | 'walking' | 'paused' | 'stopped'
@@ -85,10 +86,13 @@ function create() {
   });
 
   // ⌥-click on the pet → toggle learning pause (only from the pet window's own renderer)
-  ipcMain.on('learning:toggle-pause', (event) => {
-    if (!petWindow || petWindow.isDestroyed() || event.sender !== petWindow.webContents) return;
-    if (learningTogglePauseHandler) learningTogglePauseHandler();
-  });
+  if (!learningIpcRegistered) {
+    learningIpcRegistered = true;
+    ipcMain.on('learning:toggle-pause', (event) => {
+      if (!petWindow || petWindow.isDestroyed() || event.sender !== petWindow.webContents) return;
+      if (learningTogglePauseHandler) learningTogglePauseHandler();
+    });
+  }
 
   // --- Eye tracking ---
   startEyeTracking();

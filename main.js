@@ -120,6 +120,7 @@ function showHelperUnavailable() {
 }
 
 function setupLearning() {
+  if (learning) return; // startApp can run more than once (setup flow); init learning only once
   learning = createLearning({
     userDataDir: app.getPath('userData'),
     helperPath: getHelperPath(),
@@ -132,6 +133,9 @@ function setupLearning() {
     deps: { getIdleMs: () => powerMonitor.getSystemIdleTime() * 1000 },
   });
   learning.start(); // resumes only if the user left learning on (store key learning.enabled, default false)
+  updateSlimeState();
+  const petWin = petWindowManager.getWindow();
+  if (petWin && !petWin.isDestroyed()) petWin.webContents.on('did-finish-load', () => updateSlimeState());
 
   globalShortcut.register('CommandOrControl+Shift+M', () => learning.togglePause());
   petWindowManager.onLearningTogglePause(() => learning.togglePause());

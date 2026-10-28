@@ -47,6 +47,8 @@ class HelperClient extends EventEmitter {
     };
     child.on('error', onGone);
     child.on('exit', onGone);
+    // After every successful spawn, restarts included, so the owner can re-apply state (e.g. pause)
+    child.once('spawn', () => { if (this.child === child && !this.stopped) this.emit('spawned'); });
     child.stdin.on('error', () => {});
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk) => { if (this.child === child && !this.stopped) this._onData(chunk); });
