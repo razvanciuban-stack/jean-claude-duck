@@ -162,8 +162,8 @@ function scheduleNextWander() {
   if (wanderPaused || isDragging) return;
   if (wanderTimer) clearTimeout(wanderTimer);
 
-  // Wait 4-12 seconds before next move
-  const delay = 4000 + Math.random() * 8000;
+  // A cat mostly stays put: rest 30-90 seconds before the next stroll
+  const delay = 30000 + Math.random() * 60000;
   wanderTimer = setTimeout(() => {
     if (wanderPaused || isDragging || !petWindow || petWindow.isDestroyed()) return;
     startWalking();
