@@ -60,6 +60,19 @@ function updateSlimeState() {
   });
   const expression = getExpression(state);
   sendPetState({ state, ...expression });
+  syncWatching();
+}
+
+// While learning is watching, Mysthi stays put in her attentive "watching" pose with thinking dots
+let wasWatching = false;
+function syncWatching() {
+  const watching = !!(learning && learning.isWatching());
+  const petWin = petWindowManager.getWindow();
+  if (petWin && !petWin.isDestroyed()) petWin.webContents.send('pet:learning', { watching });
+  if (watching === wasWatching) return;
+  wasWatching = watching;
+  if (watching) petWindowManager.pauseFollowing();
+  else petWindowManager.resumeFollowing();
 }
 
 // Every pet:state goes through here so nothing reopens the eyes while learning is on but not watching

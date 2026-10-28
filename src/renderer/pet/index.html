@@ -103,6 +103,24 @@
       100% { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(0.3); }
     }
 
+    /* === Learning: attentive "watching" pose with thinking dots by her head === */
+    #thinking {
+      position: absolute; left: 112px; top: 92px;
+      display: none; gap: 4px; pointer-events: none;
+    }
+    #thinking i {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: #161514; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6);
+      animation: think-dot 1.4s ease-in-out infinite;
+    }
+    #thinking i:nth-child(2) { animation-delay: 0.2s; }
+    #thinking i:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes think-dot { 0%, 60%, 100% { opacity: 0.35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+    body.watching:not(.walking-now) #thinking { display: flex; }
+    /* Ears up, tail slow: she is paying attention */
+    body.watching .ear { transform: scaleY(1.07); }
+    body.watching .tail { animation-duration: 6s; }
+
     /* === Reaction Bubble === */
     #reaction-bubble {
       position: absolute;
@@ -154,7 +172,7 @@
 </head>
 <body>
   <div id="reaction-bubble"></div>
-  <div id="stage"><div id="slime-container"></div></div>
+  <div id="stage"><div id="slime-container"></div><div id="thinking"><i></i><i></i><i></i></div></div>
   <script src="mysthi.js"></script>
   <script>
     const { ipcRenderer } = require('electron');
@@ -325,6 +343,7 @@
     const onFloor = () => (document.body.dataset.edge || 'floor') === 'floor';
     function rest() {
       isWandering = false;
+      document.body.classList.remove('walking-now');
       setPose(svg, onFloor() ? 'sit' : 'cling');
     }
 
@@ -347,10 +366,16 @@
     }
     ipcRenderer.on('pet:edge', (event, { edge }) => setEdge(edge));
 
+    // Learning is watching: stay attentive with thinking dots (main also stops her strolls)
+    ipcRenderer.on('pet:learning', (event, { watching }) => {
+      document.body.classList.toggle('watching', !!watching);
+    });
+
     ipcRenderer.on('pet:wander', (event, { action, direction, edge }) => {
       if (edge) setEdge(edge);
       if (action === 'walk') {
         isWandering = true;
+        document.body.classList.add('walking-now');
         container.className = '';
         setPose(svg, 'walk', direction === 'left' ? 'left' : 'right');
       } else if (action === 'stop') {
