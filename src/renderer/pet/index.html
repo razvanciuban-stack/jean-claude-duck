@@ -21,106 +21,63 @@
       transform: scaleX(1.3) scaleY(0.7) !important;
     }
 
-    @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
-    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
-    @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
-    @keyframes bounce-fast { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
-    @keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-3px)} }
-    @keyframes hop { 0%{transform:translateY(0) scaleY(1)} 20%{transform:translateY(0) scaleY(0.85) scaleX(1.15)} 50%{transform:translateY(-14px) scaleY(1.1) scaleX(0.9)} 100%{transform:translateY(0) scaleY(1)} }
-    @keyframes wiggle { 0%,100%{transform:rotate(0deg)} 25%{transform:rotate(-5deg)} 75%{transform:rotate(5deg)} }
-    @keyframes jelly { 0%,100%{transform:scaleX(1) scaleY(1)} 25%{transform:scaleX(1.1) scaleY(0.9)} 50%{transform:scaleX(0.9) scaleY(1.1)} 75%{transform:scaleX(1.05) scaleY(0.95)} }
+    /* Whole-body moods — a cat breathes, it doesn't bounce */
+    #slime-container { transform-origin: 50% 100%; }
+    @keyframes breathe { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(1.02)} }
+    @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-2px)} 75%{transform:translateX(2px)} }
+    @keyframes chatter { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-2px)} }
+    @keyframes hop { 0%{transform:translateY(0) scaleY(1)} 20%{transform:scaleY(0.9) scaleX(1.08)} 50%{transform:translateY(-10px) scaleY(1.05) scaleX(0.96)} 100%{transform:translateY(0) scaleY(1)} }
+    @keyframes wiggle { 0%,100%{transform:rotate(0deg)} 25%{transform:rotate(-4deg)} 75%{transform:rotate(4deg)} }
+    @keyframes stretch { 0%,100%{transform:scaleX(1) scaleY(1)} 40%,60%{transform:scaleX(1.12) scaleY(0.9)} }
+    @keyframes look-around { 0%,100%{transform:rotate(0deg)} 25%{transform:rotate(-6deg)} 50%{transform:rotate(0deg)} 75%{transform:rotate(6deg)} }
 
-    /* Walking — little hopping steps */
-    @keyframes walk-right {
-      0%   { transform: translateY(0) rotate(0deg); }
-      15%  { transform: translateY(-6px) rotate(3deg); }
-      30%  { transform: translateY(0) rotate(0deg); }
-      50%  { transform: translateY(0) rotate(0deg); }
-      65%  { transform: translateY(-6px) rotate(-3deg); }
-      80%  { transform: translateY(0) rotate(0deg); }
-      100% { transform: translateY(0) rotate(0deg); }
-    }
-    @keyframes walk-left {
-      0%   { transform: translateY(0) rotate(0deg); }
-      15%  { transform: translateY(-6px) rotate(-3deg); }
-      30%  { transform: translateY(0) rotate(0deg); }
-      50%  { transform: translateY(0) rotate(0deg); }
-      65%  { transform: translateY(-6px) rotate(3deg); }
-      80%  { transform: translateY(0) rotate(0deg); }
-      100% { transform: translateY(0) rotate(0deg); }
-    }
+    /* Arrivals after a stroll */
+    @keyframes arrive-bounce { 0%{transform:scaleY(1)} 25%{transform:scaleY(0.9) scaleX(1.06)} 55%{transform:scaleY(1.04) translateY(-4px)} 100%{transform:scaleY(1)} }
+    @keyframes arrive-settle { 0%{transform:translateY(-4px)} 40%{transform:translateY(1px) scaleY(0.95)} 100%{transform:translateY(0) scaleY(1)} }
+    @keyframes arrive-loaf { 0%,100%{transform:scaleY(1)} 35%,65%{transform:scaleY(0.86) scaleX(1.06)} }
 
-    /* Arrival: big bounce landing */
-    @keyframes arrive-bounce {
-      0%   { transform: scaleY(1) scaleX(1); }
-      15%  { transform: scaleY(0.6) scaleX(1.3); }
-      35%  { transform: scaleY(1.2) scaleX(0.85) translateY(-15px); }
-      55%  { transform: scaleY(0.75) scaleX(1.15); }
-      70%  { transform: scaleY(1.1) scaleX(0.92) translateY(-6px); }
-      85%  { transform: scaleY(0.95) scaleX(1.05); }
-      100% { transform: scaleY(1) scaleX(1); }
-    }
-
-    /* Arrival: Van Damme spin kick! */
-    @keyframes arrive-spin {
-      0%   { transform: rotate(0deg) scale(1); }
-      30%  { transform: rotate(180deg) scale(1.1) translateY(-10px); }
-      60%  { transform: rotate(360deg) scale(1.05) translateY(-5px); }
-      80%  { transform: rotate(360deg) scale(0.9) scaleY(0.8) scaleX(1.2); }
-      100% { transform: rotate(360deg) scale(1); }
-    }
-
-    /* Arrival: settle down calmly */
-    @keyframes arrive-settle {
-      0%   { transform: translateY(-8px); }
-      30%  { transform: translateY(2px) scaleY(0.9) scaleX(1.1); }
-      60%  { transform: translateY(-3px); }
-      100% { transform: translateY(0) scaleY(1) scaleX(1); }
-    }
-
-    /* Arrival: Van Damme SPLITS! */
-    @keyframes arrive-splits {
-      0%   { transform: scaleX(1) scaleY(1); }
-      20%  { transform: scaleX(1) scaleY(1) translateY(-12px); }
-      45%  { transform: scaleX(1.6) scaleY(0.55) translateY(0); }
-      65%  { transform: scaleX(1.6) scaleY(0.55) translateY(0); }
-      80%  { transform: scaleX(1.2) scaleY(0.8) translateY(-4px); }
-      100% { transform: scaleX(1) scaleY(1) translateY(0); }
-    }
-
-    /* Idle: looking around */
-    @keyframes look-around {
-      0%,100% { transform: rotate(0deg); }
-      20%     { transform: rotate(-8deg) translateX(-2px); }
-      50%     { transform: rotate(0deg); }
-      70%     { transform: rotate(8deg) translateX(2px); }
-    }
-
-    /* Roundhouse kick */
-    @keyframes roundhouse {
-      0%   { transform: rotate(0deg) scale(1); }
-      20%  { transform: rotate(-15deg) scale(1.05); }
-      50%  { transform: rotate(270deg) scale(1.15) translateY(-8px); }
-      75%  { transform: rotate(350deg) scale(1.05); }
-      100% { transform: rotate(360deg) scale(1); }
-    }
-
-    .anim-bounce { animation: bounce 1.5s ease-in-out infinite; }
-    .anim-float { animation: float 3s ease-in-out infinite; }
+    .anim-bounce, .anim-bob { animation: breathe 3.2s ease-in-out infinite; }
+    .anim-float { animation: breathe 4.5s ease-in-out infinite; }
     .anim-shake { animation: shake 0.3s ease-in-out infinite; }
-    .anim-bounce-fast { animation: bounce-fast 0.8s ease-in-out infinite; }
-    .anim-bob { animation: bob 2.5s ease-in-out infinite; }
+    .anim-bounce-fast { animation: chatter 0.6s ease-in-out infinite; }
     .anim-hop { animation: hop 0.6s ease-in-out; }
     .anim-wiggle { animation: wiggle 0.4s ease-in-out; }
-    .anim-jelly { animation: jelly 0.5s ease-in-out; }
-    .anim-walk-right { animation: walk-right 0.6s ease-in-out infinite; }
-    .anim-walk-left { animation: walk-left 0.6s ease-in-out infinite; }
+    .anim-jelly, .anim-arrive-spin { animation: stretch 0.9s ease-in-out; }
     .anim-arrive-bounce { animation: arrive-bounce 0.7s ease-out; }
-    .anim-arrive-spin { animation: arrive-spin 0.8s ease-out; }
     .anim-arrive-settle { animation: arrive-settle 0.5s ease-out; }
-    .anim-arrive-splits { animation: arrive-splits 1.2s ease-in-out; }
+    .anim-arrive-splits { animation: arrive-loaf 1.2s ease-in-out; }
     .anim-look-around { animation: look-around 2s ease-in-out; }
-    .anim-roundhouse { animation: roundhouse 0.6s ease-in-out; }
+
+    /* === Mysthi's drawing === */
+    /* fill-box only on the sitting pose: the walk pose uses SVG transform attributes with explicit centres */
+    #slime-container .pose.sit * { transform-box: fill-box; }
+    .pose.walk { visibility: hidden; }
+    svg.walking .pose.sit { visibility: hidden; }
+    svg.walking .pose.walk { visibility: visible; }
+    svg.facing-left .pose.walk { transform: scaleX(-1); transform-box: fill-box; transform-origin: 50% 50%; }
+
+    .tail { transform-origin: 100% 90%; animation: tail-sway 4s ease-in-out infinite; }
+    @keyframes tail-sway { 0%,100%{transform:rotate(0)} 50%{transform:rotate(-9deg)} }
+    .ear { transform-origin: 50% 100%; transition: transform 0.3s cubic-bezier(.3,1.8,.5,1); }
+    .whiskers.left { transform-origin: 100% 50%; }
+    .whiskers.right { transform-origin: 0% 50%; }
+    .eye, .lid { transform-origin: 50% 50%; transition: transform 0.15s ease; }
+    .pupil { transition: transform 0.25s ease; }
+
+    svg[data-eyes="half"] .lid { transform: scaleY(0.55); }
+    svg[data-eyes="wide"] .eye { transform: scale(1.14); }
+    svg[data-eyes="wide"] .ear { transform: scaleY(1.06); }
+    svg[data-eyes="closed"] .lid, svg[data-eyes="squish"] .lid, svg[data-eyes="hearts"] .lid, svg[data-eyes="stars"] .lid { opacity: 0; }
+    svg.blinking .lid { transform: scaleY(0.08); transition-duration: 0.07s; }
+
+    svg.ear-twitch .ear.left { animation: ear-twitch 0.25s ease-in-out 2; }
+    @keyframes ear-twitch { 50%{transform:rotate(-12deg)} }
+    svg.tail-flick .tail { animation: tail-flick 0.45s ease-in-out 2; }
+    @keyframes tail-flick { 50%{transform:rotate(-24deg)} }
+    svg.whisker-twitch .whiskers.left { animation: whisker-l 0.3s ease-in-out 2; }
+    svg.whisker-twitch .whiskers.right { animation: whisker-r 0.3s ease-in-out 2; }
+    @keyframes whisker-l { 50%{transform:rotate(-7deg)} }
+    @keyframes whisker-r { 50%{transform:rotate(7deg)} }
 
     /* Particles */
     .particle {
@@ -132,36 +89,6 @@
     @keyframes particle-fly {
       0% { opacity: 1; transform: translate(0, 0) scale(1); }
       100% { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(0.3); }
-    }
-
-    /* Water droplets trail */
-    .water-drop {
-      position: absolute;
-      pointer-events: none;
-      width: 4px;
-      height: 4px;
-      border-radius: 50%;
-      background: rgba(96, 165, 250, 0.6);
-      animation: water-fade 1.2s ease-out forwards;
-    }
-    .water-drop.big {
-      width: 6px;
-      height: 6px;
-      background: rgba(147, 197, 253, 0.5);
-    }
-    .water-splash {
-      position: absolute;
-      pointer-events: none;
-      font-size: 10px;
-      animation: splash-up 0.8s ease-out forwards;
-    }
-    @keyframes water-fade {
-      0% { opacity: 0.7; transform: scale(1); }
-      100% { opacity: 0; transform: scale(0.2); }
-    }
-    @keyframes splash-up {
-      0% { opacity: 0.8; transform: translateY(0) scale(1); }
-      100% { opacity: 0; transform: translateY(8px) scale(0.5); }
     }
 
     /* === Reaction Bubble === */
@@ -218,11 +145,11 @@
 <body>
   <div id="reaction-bubble"></div>
   <div id="slime-container"></div>
-  <script src="slime.js"></script>
+  <script src="mysthi.js"></script>
   <script>
     const { ipcRenderer } = require('electron');
     const container = document.getElementById('slime-container');
-    const svg = createSlimeSVG();
+    const svg = createMysthiSVG();
     container.appendChild(svg);
 
     // Current state
@@ -235,10 +162,6 @@
     setMouth(svg, 'grin');
     setAnimation(container, 'bounce');
 
-    // Blink timer for idle state
-    let blinkInterval = null;
-    let eyesOpen = true;
-
     // Temporary eye effects (squish, hearts, stars, wide) — skipped while closed (learning on, not watching)
     function flashEyes(type) {
       if (currentEyeType === 'closed') return;
@@ -249,16 +172,15 @@
     ipcRenderer.on('cursor:direction', (event, { dx, dy, dist }) => {
       cursorDx = dx;
       cursorDy = dy;
-      // Update eye direction in real-time
-      if (currentEyeType !== 'blink' && currentEyeType !== 'squish' &&
-          currentEyeType !== 'hearts' && currentEyeType !== 'stars') {
+      // Follow the cursor, unless a short eye effect (squish, hearts, slow blink…) is showing
+      if (svg.dataset.eyes === currentEyeType) {
         setEyesWithDirection(svg, currentEyeType, dx, dy);
       }
     });
 
     ipcRenderer.on('cursor:near', () => {
       // Cursor is close — look straight ahead
-      if (currentEyeType !== 'blink' && currentEyeType !== 'squish') {
+      if (svg.dataset.eyes === currentEyeType) {
         setEyesWithDirection(svg, currentEyeType, 0, 0);
       }
     });
@@ -283,21 +205,8 @@
       currentEyeType = eyes;
       setEyesWithDirection(svg, eyes, cursorDx, cursorDy);
       setMouth(svg, mouth);
-      setAnimation(container, animation);
-
-      // Handle blink loop for idle
-      if (blinkInterval) { clearInterval(blinkInterval); blinkInterval = null; }
-      if (eyes === 'blink') {
-        eyesOpen = true;
-        blinkInterval = setInterval(() => {
-          eyesOpen = !eyesOpen;
-          if (eyesOpen) {
-            setEyesWithDirection(svg, 'open', cursorDx, cursorDy);
-          } else {
-            setEyes(svg, 'half');
-          }
-        }, 4000);
-      }
+      if (!isWandering) setAnimation(container, animation);
+      // 'blink' eyes are open eyes; mysthi.js blinks them naturally
 
       // Handle talking mouth animation
       if (mouth === 'talking') {
@@ -313,7 +222,7 @@
     // --- Hit testing (per-pixel: only opaque SVG elements) ---
     document.addEventListener('mousemove', (e) => {
       const el = document.elementFromPoint(e.clientX, e.clientY);
-      const hit = el && el.tagName === 'rect' && el.closest('svg');
+      const hit = el && el !== svg && svg.contains(el);
       ipcRenderer.send('slime:hit-test', { hit: !!hit });
     });
 
@@ -371,7 +280,7 @@
           // Every 5 clicks — hearts!
           flashEyes('hearts');
           setMouth(svg, 'big-smile');
-          spawnParticles('🐤', 5);
+          spawnParticles('💜', 5);
           setTimeout(() => {
             setEyesWithDirection(svg, currentEyeType, cursorDx, cursorDy);
             setMouth(svg, 'grin');
@@ -384,114 +293,49 @@
             setEyesWithDirection(svg, currentEyeType, cursorDx, cursorDy);
           }, 1000);
         } else {
-          // Normal click — little hop
-          spawnParticles('💫', 1);
+          // Normal click — ears perk up
+          playFlourish(svg, 'ear-twitch', 600);
+          spawnParticles('🐾', 1);
         }
       }
       ipcRenderer.send('slime:drag-end', {});
       dragState = null;
     });
 
-    // --- Water trail while walking ---
-    let waterInterval = null;
-
-    function startWaterTrail() {
-      stopWaterTrail();
-      waterInterval = setInterval(() => {
-        // Small water droplets behind the duck
-        const drop = document.createElement('div');
-        drop.className = Math.random() > 0.6 ? 'water-drop big' : 'water-drop';
-        drop.style.left = (40 + Math.random() * 40) + 'px';
-        drop.style.top = (90 + Math.random() * 20) + 'px';
-        document.body.appendChild(drop);
-        setTimeout(() => drop.remove(), 1200);
-
-        // Occasional tiny splash
-        if (Math.random() > 0.7) {
-          const splash = document.createElement('div');
-          splash.className = 'water-splash';
-          splash.textContent = '💧';
-          splash.style.left = (30 + Math.random() * 60) + 'px';
-          splash.style.top = (85 + Math.random() * 15) + 'px';
-          document.body.appendChild(splash);
-          setTimeout(() => splash.remove(), 800);
-        }
-      }, 150);
-    }
-
-    function stopWaterTrail() {
-      if (waterInterval) {
-        clearInterval(waterInterval);
-        waterInterval = null;
-      }
-    }
-
-    // --- Wandering state from main process ---
+    // --- Wandering: side-on walk while the window strolls, sit down on arrival ---
     let isWandering = false;
+
+    function sitDown(anim, ms) {
+      isWandering = false;
+      setPose(svg, 'sit');
+      container.className = '';
+      container.classList.add(`anim-${anim}`);
+      setTimeout(() => { container.className = ''; setAnimation(container, 'bounce'); }, ms);
+    }
 
     ipcRenderer.on('pet:wander', (event, { action, direction }) => {
       if (action === 'walk') {
         isWandering = true;
-        setMouth(svg, 'grin');
-        startWaterTrail();
         container.className = '';
-        // Flip duck sprite based on direction (beak faces left by default)
-        if (direction === 'right') {
-          svg.style.transform = 'scaleX(-1)';
-        } else {
-          svg.style.transform = 'scaleX(1)';
-        }
-        container.classList.add(direction === 'left' ? 'anim-walk-left' : 'anim-walk-right');
+        setPose(svg, 'walk', direction === 'left' ? 'left' : 'right');
       } else if (action === 'stop') {
         isWandering = false;
-        stopWaterTrail();
-        svg.style.transform = 'scaleX(1)';
+        setPose(svg, 'sit');
         container.className = '';
         setAnimation(container, 'bounce');
       } else if (action === 'arrive-bounce') {
-        isWandering = false;
-        stopWaterTrail();
-        container.className = '';
-        container.classList.add('anim-arrive-bounce');
-        spawnParticles('💫', 2);
-        setTimeout(() => { container.className = ''; setAnimation(container, 'bounce'); }, 700);
+        sitDown('arrive-bounce', 700);
+        spawnParticles('🐾', 2);
       } else if (action === 'arrive-spin') {
-        isWandering = false;
-        stopWaterTrail();
-        container.className = '';
-        container.classList.add('anim-arrive-spin');
-        flashEyes('stars');
-        spawnParticles('🦆', 3);
-        setTimeout(() => {
-          container.className = '';
-          setAnimation(container, 'bounce');
-          setEyesWithDirection(svg, currentEyeType, cursorDx, cursorDy);
-        }, 800);
+        sitDown('arrive-spin', 900); // a big stretch
+        playFlourish(svg, 'tail-flick');
       } else if (action === 'arrive-settle') {
-        isWandering = false;
-        stopWaterTrail();
-        container.className = '';
-        container.classList.add('anim-arrive-settle');
-        setMouth(svg, 'small-o');
-        setTimeout(() => {
-          container.className = '';
-          setAnimation(container, 'bob');
-          setMouth(svg, 'grin');
-        }, 500);
+        sitDown('arrive-settle', 500);
+        playFlourish(svg, 'whisker-twitch', 700);
       } else if (action === 'arrive-splits') {
-        isWandering = false;
-        stopWaterTrail();
-        container.className = '';
-        container.classList.add('anim-arrive-splits');
-        setMouth(svg, 'big-smile');
+        sitDown('arrive-splits', 1200); // settles into a loaf for a moment
         flashEyes('squish');
-        spawnParticles('💪', 3);
-        setTimeout(() => {
-          container.className = '';
-          setAnimation(container, 'bounce');
-          setMouth(svg, 'grin');
-          setEyesWithDirection(svg, currentEyeType, cursorDx, cursorDy);
-        }, 1200);
+        setTimeout(() => setEyesWithDirection(svg, currentEyeType, cursorDx, cursorDy), 1200);
       }
     });
 
@@ -529,44 +373,26 @@
       showNextReaction();
     });
 
-    // --- Random idle behaviors ---
+    // --- Random idle behaviours ---
     setInterval(() => {
       if (isWandering) return; // don't interrupt walking
-      if (Math.random() < 0.12) {
-        const behaviors = ['tongue', 'wiggle', 'jelly', 'roundhouse', 'look-around', 'splits-idle'];
-        const pick = behaviors[Math.floor(Math.random() * behaviors.length)];
-        if (pick === 'tongue') {
-          setMouth(svg, 'tongue');
-          setTimeout(() => setMouth(svg, 'grin'), 2000);
-        } else if (pick === 'wiggle') {
-          container.style.animation = 'wiggle 0.4s ease-in-out';
-          setTimeout(() => { container.style.animation = ''; setAnimation(container, 'bounce'); }, 400);
-        } else if (pick === 'jelly') {
-          container.style.animation = 'jelly 0.5s ease-in-out';
-          setTimeout(() => { container.style.animation = ''; setAnimation(container, 'bounce'); }, 500);
-        } else if (pick === 'roundhouse') {
-          // Random roundhouse kick!
-          container.style.animation = 'roundhouse 0.6s ease-in-out';
-          flashEyes('wide');
-          spawnParticles('🦆', 2);
-          setTimeout(() => {
-            container.style.animation = '';
-            setAnimation(container, 'bounce');
-            setEyesWithDirection(svg, currentEyeType, cursorDx, cursorDy);
-          }, 600);
-        } else if (pick === 'look-around') {
+      if (Math.random() < 0.15) {
+        const behaviours = ['ear-twitch', 'tail-flick', 'whisker-twitch', 'look-around', 'stretch', 'slow-blink'];
+        const pick = behaviours[Math.floor(Math.random() * behaviours.length)];
+        if (pick === 'look-around') {
           container.style.animation = 'look-around 2s ease-in-out';
-          setTimeout(() => { container.style.animation = ''; setAnimation(container, 'bounce'); }, 2000);
-        } else if (pick === 'splits-idle') {
-          // Random splits!
-          container.style.animation = 'arrive-splits 1.2s ease-in-out';
-          setMouth(svg, 'big-smile');
-          spawnParticles('💪', 2);
-          setTimeout(() => {
-            container.style.animation = '';
-            setAnimation(container, 'bounce');
-            setMouth(svg, 'grin');
-          }, 1200);
+          setTimeout(() => { container.style.animation = ''; }, 2000);
+        } else if (pick === 'stretch') {
+          container.style.animation = 'stretch 0.9s ease-in-out';
+          setTimeout(() => { container.style.animation = ''; }, 900);
+        } else if (pick === 'slow-blink') {
+          // A cat's slow blink: "I trust you"
+          if (currentEyeType !== 'closed') {
+            setEyes(svg, 'half');
+            setTimeout(() => setEyesWithDirection(svg, currentEyeType, cursorDx, cursorDy), 1200);
+          }
+        } else {
+          playFlourish(svg, pick);
         }
       }
     }, 8000);

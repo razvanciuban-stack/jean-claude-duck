@@ -195,7 +195,7 @@ function animateToTarget() {
 
   // If wrapping, just keep moving in same direction until we're well on screen
   if (isWrapping) {
-    const speed = 2.5;
+    const speed = 1.4; // a calm cat stroll; mysthi.js times her steps to this
     const direction = wanderTarget._wrapDir; // 1 = right, -1 = left
     let newX = Math.round(cx + direction * speed);
     petWindow.setPosition(newX, dockY);
@@ -239,7 +239,7 @@ function animateToTarget() {
   }
 
   // Move horizontally only along the dock
-  const speed = 2.5;
+  const speed = 1.4; // a calm cat stroll; mysthi.js times her steps to this
   const direction = dx > 0 ? 1 : -1;
   let newX = Math.round(cx + direction * speed);
 
@@ -289,7 +289,7 @@ function startEyeTracking() {
     const [wx, wy] = petWindow.getPosition();
 
     const cx = wx + 90;  // center of 180px wide window
-    const cy = wy + 110; // center of duck in 170px tall window (duck at bottom)
+    const cy = wy + 90;  // Mysthi's eyes in the 170px tall window (she sits at the bottom)
     const dx = cursor.x - cx;
     const dy = cursor.y - cy;
     const dist = Math.sqrt(dx * dx + dy * dy);
