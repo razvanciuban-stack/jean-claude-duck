@@ -11,8 +11,9 @@ function link(lesson) {
   return `[[lessons/${lesson.slug}|${title}]]`;
 }
 
-function buildBullets({ lessons = [], facts = [] }) {
-  const out = { 'New lessons': [], 'Updated lessons': [], 'New knowledge': [] };
+function buildBullets({ lessons = [], facts = [], notes = [] }) {
+  const out = { 'New lessons': [], 'Updated lessons': [], 'New knowledge': [], Notes: [] };
+  for (const n of notes) out.Notes.push(`- ${oneLine(n)}`);
   for (const r of lessons) {
     if (!r || !r.lesson) continue;
     if (r.kind === 'new') {
@@ -40,27 +41,42 @@ function mergeIntoExisting(text, bullets) {
   if (!SECTIONS.every((s) => heads[s] !== undefined)) return null;
   if (!(heads[SECTIONS[0]] < heads[SECTIONS[1]] && heads[SECTIONS[1]] < heads[SECTIONS[2]])) return null;
 
+  // Notes is optional: append the section at the end when missing
+  const notesAt = lines.findIndex((l) => /^## Notes\s*$/.test(l));
+  if (bullets.Notes.length && notesAt < 0) {
+    while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
+    lines.push('', '## Notes', '', ...bullets.Notes, '');
+    bullets.Notes = [];
+  } else if (notesAt >= 0) {
+    heads.Notes = notesAt;
+  }
+
   // process from the bottom so earlier indices stay valid
-  for (const name of [...SECTIONS].reverse()) {
+  const order = [...SECTIONS, ...(heads.Notes !== undefined ? ['Notes'] : [])].sort((a, b) => heads[b] - heads[a]);
+  for (const name of order) {
     if (!bullets[name].length) continue;
     let end = lines.length;
     for (let i = heads[name] + 1; i < lines.length; i++) {
       if (/^#{1,2} /.test(lines[i])) { end = i; break; }
     }
+    const present = new Set(lines.slice(heads[name] + 1, end));
+    const fresh = bullets[name].filter((b) => !present.has(b));
+    if (!fresh.length) continue;
     let at = end;
     while (at > heads[name] + 1 && lines[at - 1].trim() === '') at--;
-    lines.splice(at, 0, ...bullets[name]);
+    lines.splice(at, 0, ...fresh);
   }
   return lines.join('\n');
 }
 
 function sectionsText(bullets, level) {
-  return SECTIONS.map((s) => `${level} ${s}\n\n${bullets[s].length ? bullets[s].join('\n') + '\n' : ''}`).join('\n');
+  const names = bullets.Notes.length ? [...SECTIONS, 'Notes'] : SECTIONS;
+  return names.map((s) => `${level} ${s}\n\n${bullets[s].length ? bullets[s].join('\n') + '\n' : ''}`).join('\n');
 }
 
-function appendDailyLog({ vault, date, lessons = [], facts = [] }) {
-  const bullets = buildBullets({ lessons, facts });
-  if (SECTIONS.every((s) => !bullets[s].length)) return;
+function appendDailyLog({ vault, date, lessons = [], facts = [], notes = [] }) {
+  const bullets = buildBullets({ lessons, facts, notes });
+  if (bullets.Notes.length === 0 && SECTIONS.every((s) => !bullets[s].length)) return;
   const rel = `log/${date}.md`;
   const existing = vault.read(rel);
   if (existing == null) {

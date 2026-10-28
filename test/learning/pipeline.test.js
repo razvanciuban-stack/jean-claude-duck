@@ -143,13 +143,17 @@ test('per-task steps only, isTask false makes no lesson, knowledge once per segm
 test('reloads lessons after each learnTask', async () => {
   const ctx = setup();
   ctx.journal.append(step('a', T0));
+  ctx.journal.append(step('b', T0 + 1000));
   let loads = 0;
   const { deps } = fakeDeps({
     loadLessons: () => { loads++; return []; },
-    groupTasks: async () => [{ name: 'A', stepIds: ['a'], isTask: true }, { name: 'B', stepIds: [], isTask: true }],
+    groupTasks: async () => [{ name: 'A', stepIds: ['a'], isTask: true }, { name: 'B', stepIds: ['b'], isTask: true }],
   });
   await make(ctx, deps).runIfIdle();
-  assert.ok(loads >= 2);
+  assert.ok(loads >= 3);
+  const empty = fakeDeps({ groupTasks: async () => [{ name: 'E', stepIds: [], isTask: true }] });
+  await make(ctx, empty.deps).runIfIdle();
+  assert.strictEqual(empty.calls.learn.length, 0);
 });
 
 test('daily log lists new and updated lessons, plus weekly state', async () => {
@@ -209,4 +213,97 @@ test('recordWeek creates and accumulates weekly.json', () => {
   assert.deepStrictEqual(w.newLessons, ['a']);
   assert.deepStrictEqual(w.updated, [{ slug: 'a', changes: ['x'] }]);
   assert.strictEqual(w.facts.length, 1);
+});
+
+const two = async () => [{ name: 'One', stepIds: ['a'], isTask: true }, { name: 'Two', stepIds: ['b'], isTask: true }];
+
+test('retry skips tasks already learned (no double count)', async () => {
+  const ctx = setup();
+  ctx.journal.append(step('a', T0));
+  ctx.journal.append(step('b', T0 + 1000));
+  let failTwo = true;
+  const seen = [];
+  const { deps } = fakeDeps({
+    groupTasks: two,
+    learnTask: async ({ task }) => {
+      if (task.name === 'Two' && failTwo) { failTwo = false; throw new Error('boom'); }
+      seen.push(task.name);
+      return { kind: 'new', lesson: { slug: task.name.toLowerCase(), title: task.name }, changes: [] };
+    },
+  });
+  const p = make(ctx, deps);
+  assert.strictEqual(await p.runIfIdle(), 'ran');
+  assert.strictEqual(ctx.journal.lastProcessed(), null);
+  assert.strictEqual(await p.runIfIdle(), 'ran');
+  assert.deepStrictEqual(seen, ['One', 'Two']);
+  assert.strictEqual(ctx.journal.lastProcessed(), 'b');
+  assert.ok(!fs.existsSync(path.join(ctx.dir, 'progress.json')));
+  assert.deepStrictEqual(readWeek(ctx.dir).newLessons, ['one', 'two']);
+});
+
+test('segment failing 3 times is skipped with a note', async () => {
+  const ctx = setup();
+  ctx.journal.append(step('a', T0));
+  const { deps } = fakeDeps({ learnTask: async () => { throw new Error('bad'); } });
+  const p = make(ctx, deps);
+  assert.strictEqual(await p.runIfIdle(), 'ran');
+  assert.strictEqual(await p.runIfIdle(), 'ran');
+  assert.strictEqual(ctx.journal.lastProcessed(), null);
+  await p.runIfIdle();
+  assert.strictEqual(ctx.journal.lastProcessed(), 'a');
+  assert.strictEqual(p.status().lastResult, 'skipped segment after 3 failures');
+  assert.match(ctx.vault.read('log/2026-10-28.md'), /## Notes\n+- Skipped a stretch of activity Mysthi couldn't make sense of/);
+  assert.ok(!fs.existsSync(path.join(ctx.dir, 'progress.json')));
+});
+
+test('connection failures never count toward skipping', async () => {
+  const ctx = setup();
+  ctx.journal.append(step('a', T0));
+  const { deps } = fakeDeps({ learnTask: async () => { const e = new Error('x'); e.code = 'ECONNREFUSED'; throw e; } });
+  const p = make(ctx, deps);
+  for (let i = 0; i < 5; i++) assert.strictEqual(await p.runIfIdle(), 'model-unavailable');
+  assert.strictEqual(ctx.journal.lastProcessed(), null);
+});
+
+test('null grouping with model gone re-probes: model-unavailable, no attempt counted', async () => {
+  const ctx = setup();
+  ctx.journal.append(step('a', T0));
+  let probes = 0;
+  const { deps } = fakeDeps({ groupTasks: async () => null, isAvailable: async () => ++probes === 1 });
+  const p = make(ctx, deps);
+  assert.strictEqual(await p.runIfIdle(), 'model-unavailable');
+  assert.ok(!fs.existsSync(path.join(ctx.dir, 'progress.json')));
+});
+
+test('stops with not-idle when user returns between segments', async () => {
+  const ctx = setup();
+  ctx.journal.append(step('a', T0));
+  ctx.journal.append(step('b', T0 + 10 * MIN));
+  let idle = 10 * MIN;
+  const { deps } = fakeDeps({
+    learnTask: async ({ task }) => { idle = 0; return { kind: 'new', lesson: { slug: task.name, title: task.name }, changes: [] }; },
+  });
+  const p = make(ctx, deps, { getIdleMs: () => idle });
+  assert.strictEqual(await p.runIfIdle(), 'not-idle');
+  assert.strictEqual(ctx.journal.lastProcessed(), 'a');
+});
+
+test('knowledge runs before learning', async () => {
+  const ctx = setup();
+  ctx.journal.append(step('a', T0));
+  const order = [];
+  const { deps } = fakeDeps({
+    extractKnowledge: async () => { order.push('k'); return []; },
+    learnTask: async ({ task }) => { order.push('l'); return { kind: 'new', lesson: { slug: 's', title: 't' }, changes: [] }; },
+  });
+  await make(ctx, deps).runIfIdle();
+  assert.deepStrictEqual(order, ['k', 'l']);
+});
+
+test('appendDailyLog skips bullets that already exist', () => {
+  const v = createVault(tmp('mysthi-dl3-')); v.ensure();
+  const l = { kind: 'new', lesson: { slug: 'a', title: 'A' }, changes: [] };
+  appendDailyLog({ vault: v, date: '2026-10-28', lessons: [l], facts: [] });
+  appendDailyLog({ vault: v, date: '2026-10-28', lessons: [l], facts: [] });
+  assert.strictEqual((v.read('log/2026-10-28.md').match(/\[\[lessons\/a\|A\]\]/g) || []).length, 1);
 });

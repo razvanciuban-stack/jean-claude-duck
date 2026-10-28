@@ -28,11 +28,14 @@ function readWeek(stateDir) {
 }
 
 function writeWeek(stateDir, week) {
-  fs.mkdirSync(stateDir, { recursive: true });
-  const full = path.join(stateDir, WEEKLY_FILE);
+  atomicWrite(path.join(stateDir, WEEKLY_FILE), JSON.stringify(week, null, 2));
+}
+
+function atomicWrite(full, text) {
+  fs.mkdirSync(path.dirname(full), { recursive: true });
   const tmp = `${full}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   try {
-    fs.writeFileSync(tmp, JSON.stringify(week, null, 2), { mode: 0o600 });
+    fs.writeFileSync(tmp, text, { mode: 0o600 });
     try { fs.chmodSync(tmp, 0o600); } catch { /* best effort */ }
     fs.renameSync(tmp, full);
   } catch (err) {
@@ -63,6 +66,26 @@ function recordWeek(stateDir, results) {
   writeWeek(stateDir, week);
 }
 
+const PROGRESS_FILE = 'progress.json';
+const MAX_ATTEMPTS = 3;
+
+function readProgress(stateDir) {
+  try {
+    const p = JSON.parse(fs.readFileSync(path.join(stateDir, PROGRESS_FILE), 'utf8'));
+    return p && p.segmentLastStepId ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeProgress(stateDir, prog) {
+  atomicWrite(path.join(stateDir, PROGRESS_FILE), JSON.stringify(prog));
+}
+
+function clearProgress(stateDir) {
+  try { fs.unlinkSync(path.join(stateDir, PROGRESS_FILE)); } catch { /* none */ }
+}
+
 function localDate(ms) {
   const d = new Date(ms);
   const p = (n) => String(n).padStart(2, '0');
@@ -80,22 +103,43 @@ function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, g
   const state = { lastRunAt: null, lastResult: null, pending: 0, running: false };
 
   async function processSegment(segment, today) {
+    const lastId = segment[segment.length - 1].id;
+    let prog = readProgress(stateDir);
+    if (!prog || prog.segmentLastStepId !== lastId) prog = { segmentLastStepId: lastId, learnedTaskKeys: [], results: [], facts: null, attempts: 0 };
+
     const tasks = await d.groupTasks(segment);
-    if (!tasks) throw Object.assign(new Error('Task grouping unavailable'), { grouping: true });
+    if (!tasks) {
+      if (!(await d.isAvailable(TEXT_MODEL))) throw Object.assign(new Error('Model unavailable'), { connection: true });
+      throw new Error('Task grouping failed');
+    }
     let lessons = d.loadLessons(vault);
-    const results = [];
+    if (!prog.facts) {
+      prog.facts = await d.extractKnowledge({ steps: segment, vault, today });
+      writeProgress(stateDir, prog);
+    }
     for (const task of tasks) {
       if (!task.isTask) continue;
       const ids = new Set(task.stepIds);
       const steps = segment.filter((s) => ids.has(s.id));
+      if (!steps.length) continue;
+      const key = [...task.stepIds].sort().join(',');
+      if (prog.learnedTaskKeys.includes(key)) continue;
       const res = await d.learnTask({ task, steps, lessons, vault, today });
-      results.push(res);
+      prog.learnedTaskKeys.push(key);
+      prog.results.push({ kind: res.kind, lesson: { slug: res.lesson.slug, title: res.lesson.title }, changes: res.changes || [] });
+      writeProgress(stateDir, prog);
       lessons = d.loadLessons(vault);
     }
-    const facts = await d.extractKnowledge({ steps: segment, vault, today });
-    appendDailyLog({ vault, date: today, lessons: results, facts });
-    recordWeek(stateDir, { lessons: results, facts });
+    appendDailyLog({ vault, date: today, lessons: prog.results, facts: prog.facts });
+    recordWeek(stateDir, { lessons: prog.results, facts: prog.facts });
+    journal.markProcessed(lastId);
+    clearProgress(stateDir);
+  }
+
+  function skipSegment(segment, today) {
+    appendDailyLog({ vault, date: today, notes: ["Skipped a stretch of activity Mysthi couldn't make sense of"] });
     journal.markProcessed(segment[segment.length - 1].id);
+    clearProgress(stateDir);
   }
 
   async function run() {
@@ -111,13 +155,24 @@ function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, g
 
     const today = localDate(now());
     for (const segment of segments) {
+      if (getIdleMs() < IDLE_THRESHOLD_MS) return 'not-idle';
       try {
         await processSegment(segment, today);
       } catch (err) {
-        if (isConnectionError(err)) {
+        if (err && err.connection || isConnectionError(err)) {
           state.lastResult = 'model-unavailable';
           return 'model-unavailable';
         }
+        const lastId = segment[segment.length - 1].id;
+        let prog = readProgress(stateDir);
+        if (!prog || prog.segmentLastStepId !== lastId) prog = { segmentLastStepId: lastId, learnedTaskKeys: [], results: [], facts: null, attempts: 0 };
+        prog.attempts += 1;
+        if (prog.attempts >= MAX_ATTEMPTS) {
+          skipSegment(segment, today);
+          state.lastResult = 'skipped segment after 3 failures';
+          continue;
+        }
+        writeProgress(stateDir, prog);
         state.lastResult = `ran (stopped: ${err && err.message ? err.message : err})`;
         return 'ran';
       }
