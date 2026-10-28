@@ -7,6 +7,7 @@
     "start": "electron .",
     "test": "node --test test/",
     "build": "electron-builder --mac",
+    "build:helper": "swift build -c release --package-path native/mysthi-helper",
     "build:dmg": "electron-builder --mac dmg"
   },
   "build": {
