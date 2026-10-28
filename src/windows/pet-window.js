@@ -8,7 +8,7 @@ const store = new Store();
 const SIZE = 180;          // square window, so Mysthi can turn onto walls and the ceiling inside it
 const SPEED = 1.4;         // px per frame — a calm cat stroll; mysthi.js times her steps to this
 const FRAME_MS = 33;       // ~30 fps movement
-const FLOOR_NUDGE = 5;     // px lower on the floor, so her paws sit right on the dock edge
+const FLOOR_NUDGE = 10;    // px lower on the floor, so her paws sit right on the dock edge
 // Where she walks: only along the bottom of the screen (floor-to-floor routes never turn up a wall)
 const EDGE_WEIGHTS = [['floor', 1]];
 
