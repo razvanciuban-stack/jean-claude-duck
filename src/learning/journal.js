@@ -16,7 +16,19 @@ function createJournal(dir) {
   const statePath = path.join(dir, 'state.json');
 
   function appendLine(file, obj) {
-    fs.appendFileSync(file, JSON.stringify(obj) + '\n', { mode: 0o600 });
+    let prefix = '';
+    try {
+      const fd = fs.openSync(file, 'r');
+      try {
+        const size = fs.fstatSync(fd).size;
+        if (size > 0) {
+          const b = Buffer.alloc(1);
+          fs.readSync(fd, b, 0, 1, size - 1);
+          if (b[0] !== 0x0a) prefix = '\n'; // crash-truncated last line
+        }
+      } finally { fs.closeSync(fd); }
+    } catch { /* file does not exist yet */ }
+    fs.appendFileSync(file, prefix + JSON.stringify(obj) + '\n', { mode: 0o600 });
     try { fs.chmodSync(file, 0o600); } catch { /* best effort */ }
   }
 
@@ -63,8 +75,10 @@ function createJournal(dir) {
   }
 
   function markProcessed(stepId) {
-    fs.writeFileSync(statePath, JSON.stringify({ lastProcessed: stepId }), { mode: 0o600 });
-    try { fs.chmodSync(statePath, 0o600); } catch { /* best effort */ }
+    const tmpPath = statePath + '.tmp';
+    fs.writeFileSync(tmpPath, JSON.stringify({ lastProcessed: stepId }), { mode: 0o600 });
+    try { fs.chmodSync(tmpPath, 0o600); } catch { /* best effort */ }
+    fs.renameSync(tmpPath, statePath);
   }
 
   function lastProcessed() {

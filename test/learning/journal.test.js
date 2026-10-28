@@ -59,3 +59,20 @@ test('journal files are 0600 and dir is 0700', () => {
     assert.strictEqual(fs.statSync(path.join(dir, f)).mode & 0o777, 0o600);
   }
 });
+
+test('append after a crash-truncated line keeps the new step readable', () => {
+  const dir = path.join(tmp(), 'l');
+  const j = createJournal(dir);
+  j.append(step('a1'));
+  const f = path.join(dir, fs.readdirSync(dir).find((n) => n.startsWith('steps-')));
+  fs.appendFileSync(f, '{"id":"broken","ts"');
+  j.append(step('a2'));
+  assert.deepStrictEqual(j.readSince(null).map((s) => s.id), ['a1', 'a2']);
+});
+
+test('markProcessed leaves no tmp file behind', () => {
+  const dir = path.join(tmp(), 'l');
+  const j = createJournal(dir);
+  j.markProcessed('a1');
+  assert.deepStrictEqual(fs.readdirSync(dir), ['state.json']);
+});

@@ -152,3 +152,37 @@ test('HelperClient.send writes a JSON line to the child stdin', async () => {
   assert.deepStrictEqual(JSON.parse(e.got), { cmd: 'pause' });
   c.stop();
 });
+
+test('typing is dropped if any field label is a password prompt', () => {
+  const { journal, rec } = setup();
+  rec.handle({ type: 'app', ...safari });
+  rec.handle({ type: 'typed', ts: 2, text: 'abc', secure: false, field: { role: 'AXTextField', title: 'Login', placeholder: 'Password', description: null }, isTerminal: false, visibleLine: null, ...safari });
+  assert.deepStrictEqual(journal.readSince(null), []);
+});
+
+test('HelperClient stop/start does not orphan a child or emit after final stop', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hc-'));
+  const bin = path.join(dir, 'tick-helper');
+  fs.writeFileSync(bin, '#!/usr/bin/env node\nsetInterval(()=>console.log(JSON.stringify({type:"tick",pid:process.pid})),20);\n');
+  fs.chmodSync(bin, 0o755);
+  const c = new HelperClient(bin);
+  const pids = new Set();
+  let stoppedAt = 0;
+  let late = 0;
+  c.on('event', (e) => {
+    pids.add(e.pid);
+    if (stoppedAt && Date.now() > stoppedAt + 50) late++;
+  });
+  c.start();
+  await new Promise((r) => setTimeout(r, 200));
+  c.stop();
+  c.start();
+  await new Promise((r) => setTimeout(r, 300));
+  c.stop();
+  stoppedAt = Date.now();
+  await new Promise((r) => setTimeout(r, 400));
+  assert.strictEqual(late, 0);
+  for (const pid of pids) {
+    assert.throws(() => process.kill(pid, 0), 'child ' + pid + ' still alive');
+  }
+});

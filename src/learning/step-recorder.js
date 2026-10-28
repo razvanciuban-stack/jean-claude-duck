@@ -99,8 +99,11 @@ function createStepRecorder({ policy, journal, onWatchingChange = () => {}, onSc
       commit(build(event, c, 'command', { value: event.text, target: null }));
       return;
     }
-    const fieldLabel = f.title || f.placeholder || f.description || undefined;
-    if (!currentPolicy.typedTextAllowed({ bundleId: c.bundleId, isTerminal: false, secure: !!event.secure, fieldLabel })) return;
+    const labels = [f.title, f.placeholder, f.description].filter((l) => typeof l === 'string' && l);
+    const checks = labels.length ? labels : [undefined];
+    const ok = checks.every((fieldLabel) =>
+      currentPolicy.typedTextAllowed({ bundleId: c.bundleId, isTerminal: false, secure: !!event.secure, fieldLabel }));
+    if (!ok) return;
     commit(build(event, c, 'type', { value: event.text, target: { role: f.role ?? null, title: f.title ?? null } }));
   }
 

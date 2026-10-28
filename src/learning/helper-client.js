@@ -16,6 +16,8 @@ class HelperClient extends EventEmitter {
 
   start() {
     this.stopped = false;
+    this.restarts = 0;
+    this.buffer = '';
     this._spawn();
   }
 
@@ -33,7 +35,8 @@ class HelperClient extends EventEmitter {
     const onGone = () => {
       if (handled) return;
       handled = true;
-      if (this.child === child) this.child = null;
+      if (this.child !== child) return; // stale child (stopped or replaced)
+      this.child = null;
       if (this.stopped) return;
       if (this.restarts < 1) {
         this.restarts += 1;
@@ -46,7 +49,7 @@ class HelperClient extends EventEmitter {
     child.on('exit', onGone);
     child.stdin.on('error', () => {});
     child.stdout.setEncoding('utf8');
-    child.stdout.on('data', (chunk) => this._onData(chunk));
+    child.stdout.on('data', (chunk) => { if (this.child === child && !this.stopped) this._onData(chunk); });
   }
 
   _onData(chunk) {
@@ -83,6 +86,7 @@ class HelperClient extends EventEmitter {
 
   stop() {
     this.stopped = true;
+    this.buffer = '';
     const child = this.child;
     this.child = null;
     if (child) {
