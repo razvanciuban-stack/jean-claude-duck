@@ -270,7 +270,6 @@
       } else if (elapsed < 200 && dx < 5 && dy < 5) {
         // It's a click!
         clickCount++;
-        ipcRenderer.send('slime:click', {});
         ipcRenderer.send('slime:interaction', {});
 
         // Fun reactions based on click count

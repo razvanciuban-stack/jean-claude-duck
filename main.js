@@ -3,11 +3,9 @@ const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
 const petWindowManager = require('./src/windows/pet-window');
-const chatWindowManager = require('./src/windows/chat-window');
 const claude = require('./src/services/claude');
 const systemInfo = require('./src/services/system-info');
 const activityMonitor = require('./src/services/activity-monitor');
-const { buildSystemPrompt } = require('./src/services/personality');
 const { evaluate, getExpression } = require('./src/services/states');
 const notificationMonitor = require('./src/services/notification-monitor');
 const { ensureQuackSound, playQuack } = require('./src/services/sound');
@@ -19,7 +17,6 @@ let tray = null;
 let isTalking = false;
 let hasError = false;
 let setupWindow = null;
-let chatIsOpen = false;
 
 // --- API Key helpers ---
 function getApiKey() {
@@ -201,19 +198,9 @@ function startApp() {
   petWindowManager.create();
   updateSlimeState();
 
-  // Show initial greeting after a short delay
-  setTimeout(() => {
-    const petWin = petWindowManager.getWindow();
-    if (petWin) {
-      chatWindowManager.create(petWin);
-      chatWindowManager.sendResponse("Quack! I'm Jean Claude Duck! Click me to chat.");
-    }
-  }, 1500);
-
   // --- Activity Monitor → Reaction Bubbles ---
   activityMonitor.start();
   activityMonitor.on('reaction', ({ text }) => {
-    if (chatIsOpen) return; // don't show reactions while chat is open
     const petWin = petWindowManager.getWindow();
     if (petWin && !petWin.isDestroyed()) {
       petWin.webContents.send('pet:reaction', { text });
@@ -254,51 +241,10 @@ function startApp() {
     if (win) win.isVisible() ? win.hide() : win.show();
   });
 
-  // IPC: slime click → open chat (pause following so bubble stays aligned)
-  ipcMain.on('slime:click', () => {
-    const petWin = petWindowManager.getWindow();
-    if (petWin) {
-      chatIsOpen = true;
-      petWindowManager.pauseFollowing();
-      chatWindowManager.create(petWin);
-    }
-  });
-
-  // IPC: track interactions for idle detection
+  // IPC: track interactions for idle detection (clicks only animate Mysthi; there is no chat)
   ipcMain.on('slime:interaction', () => {
     systemInfo.recordInteraction();
     updateSlimeState();
-  });
-
-  // IPC: chat message → Ollama
-  ipcMain.on('chat:send', async (event, { message }) => {
-    systemInfo.recordInteraction();
-    isTalking = true;
-    chatWindowManager.setWaiting(true);
-    updateSlimeState();
-
-    const systemPrompt = buildSystemPrompt(systemInfo.getInfo());
-    const result = await claude.sendMessage(message, systemPrompt);
-
-    isTalking = false;
-
-    if (result.error) {
-      hasError = true;
-      updateSlimeState();
-      chatWindowManager.sendError(result.error);
-      setTimeout(() => { hasError = false; updateSlimeState(); }, 5000);
-    } else {
-      hasError = false;
-      updateSlimeState();
-      chatWindowManager.sendResponse(result.text);
-    }
-  });
-
-  // IPC: chat dismiss — resume following cursor
-  ipcMain.on('chat:dismiss', () => {
-    chatIsOpen = false;
-    chatWindowManager.close();
-    petWindowManager.resumeFollowing();
   });
 }
 
