@@ -4,7 +4,7 @@ const path = require('path');
 
 module.exports = {
   VISION_MODEL: 'qwen2.5vl:7b',
-  TEXT_MODEL: 'llama3.1:8b',
+  TEXT_MODEL: 'qwen2.5vl:7b',
   VAULT_DIR: path.join(os.homedir(), 'ObsidianVault', 'mysthi'),
   IDLE_THRESHOLD_MS: 180000,
   CONFIDENT_AT: 3,
