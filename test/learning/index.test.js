@@ -203,7 +203,7 @@ test('screenshots: step -> screenshot cmd -> vision queue -> journal description
   h.emit('event', { type: 'click', ts: T0, bundleId: 'com.apple.finder', appName: 'Finder', window: 'Docs', target: { role: 'AXButton', title: 'New Folder' } });
   const shot = h.sent.find((c) => c.cmd === 'screenshot');
   assert.ok(shot && typeof shot.id === 'string');
-  h.emit('event', { type: 'screenshot', id: shot.id, jpegBase64: 'AAAA' });
+  h.emit('event', { type: 'screenshot', id: shot.id, jpegBase64: 'AAAA', bundleId: 'com.apple.finder', appName: 'Finder', window: 'Docs', url: null });
   h.emit('event', { type: 'screenshot', id: 'x', jpegBase64: null });
   assert.deepStrictEqual(ctx.pushed, [{ id: shot.id, jpeg: 'AAAA' }]);
 
@@ -211,7 +211,7 @@ test('screenshots: step -> screenshot cmd -> vision queue -> journal description
   ctx.learning.togglePause();
   const before = h.sent.length;
   h.emit('event', { type: 'click', ts: T0, bundleId: 'com.apple.finder', appName: 'Finder', window: 'Docs', target: { title: 'x' } });
-  h.emit('event', { type: 'screenshot', id: 'late', jpegBase64: 'BBBB' });
+  h.emit('event', { type: 'screenshot', id: 'late', jpegBase64: 'BBBB', bundleId: 'com.apple.finder', appName: 'Finder', window: 'Docs', url: null });
   assert.strictEqual(h.sent.length, before);
   assert.strictEqual(ctx.pushed.length, 1);
 });
@@ -317,4 +317,24 @@ test('helper dying synchronously in start does not leak the interval', () => {
   } finally {
     FakeHelper.dieOnStart = false;
   }
+});
+
+test('screenshot whose own context is do-not-watch is dropped, never described', () => {
+  const ctx = setup();
+  ctx.learning.enable();
+  const h = ctx.helpers[0];
+  // typed in Notes, then switched to 1Password: the screenshot shows 1Password
+  h.emit('event', { type: 'typed', ts: T0, text: 'groceries', secure: false, field: { role: 'AXTextArea', title: 'Note' }, isTerminal: false, visibleLine: null, bundleId: 'com.apple.Notes', appName: 'Notes', window: 'List', url: null });
+  const shot = h.sent.find((c) => c.cmd === 'screenshot');
+  assert.ok(shot);
+  h.emit('event', { type: 'screenshot', id: shot.id, jpegBase64: 'SECRET', bundleId: 'com.1password.1password', appName: '1Password', window: 'Vault', url: null });
+  // a bank tab in a browser
+  h.emit('event', { type: 'screenshot', id: 'b', jpegBase64: 'BANK', bundleId: 'com.google.Chrome', appName: 'Google Chrome', window: 'Login', url: 'https://www.ing.ro/login' });
+  // a browser with no URL fails closed
+  h.emit('event', { type: 'screenshot', id: 'c', jpegBase64: 'NOURL', bundleId: 'com.google.Chrome', appName: 'Google Chrome', window: 'x', url: null });
+  // no context at all (older helper) fails closed
+  h.emit('event', { type: 'screenshot', id: 'd', jpegBase64: 'NOCTX' });
+  assert.deepStrictEqual(ctx.pushed, []);
+  h.emit('event', { type: 'screenshot', id: 'e', jpegBase64: 'OK', bundleId: 'com.apple.Notes', appName: 'Notes', window: 'List', url: null });
+  assert.deepStrictEqual(ctx.pushed, [{ id: 'e', jpeg: 'OK' }]);
 });

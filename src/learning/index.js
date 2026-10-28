@@ -6,7 +6,7 @@ const path = require('path');
 const { HelperClient } = require('./helper-client');
 const { createJournal } = require('./journal');
 const { createStepRecorder } = require('./step-recorder');
-const { createPolicy } = require('./privacy');
+const { createPolicy, BROWSER_BUNDLES } = require('./privacy');
 const { createVisionQueue } = require('./vision');
 const { createVault } = require('./vault');
 const { createPipeline, readWeek, writeWeek } = require('./pipeline');
@@ -130,6 +130,18 @@ function createLearning({
     vision = null;
   }
 
+  // Fails closed: a screenshot without its own app context (e.g. an older helper) is never described
+  function screenshotAllowed(event) {
+    const str = (v) => (typeof v === 'string' && v ? v : null);
+    const c = { bundleId: str(event.bundleId), appName: str(event.appName), window: str(event.window), url: str(event.url) };
+    if (!c.bundleId && !c.appName) return false;
+    try {
+      return policy.canWatch({ ...c, isBrowser: BROWSER_BUNDLES.includes(c.bundleId) });
+    } catch {
+      return false;
+    }
+  }
+
   function onHelperEvent(h, event) {
     if (h !== helper || !event || typeof event !== 'object') return;
     if (event.type === 'permissions') {
@@ -145,7 +157,11 @@ function createLearning({
     }
     if (paused) return; // helper is paused too; drop anything that raced the pause
     if (event.type === 'screenshot') {
-      if (typeof event.jpegBase64 === 'string' && event.jpegBase64 && vision) vision.push(event.id, event.jpegBase64);
+      // The image shows whatever was frontmost when it was taken, which may not be the step's app:
+      // judge it by its own context and drop it (releasing the jpeg) unless that context may be watched.
+      if (typeof event.jpegBase64 === 'string' && event.jpegBase64 && vision && screenshotAllowed(event)) {
+        vision.push(event.id, event.jpegBase64);
+      }
       return;
     }
     try {

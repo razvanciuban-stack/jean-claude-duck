@@ -41,6 +41,9 @@ enum Screenshot {
             return
         }
         let displayID = displayOfFrontmostWindow()
+        // The frontmost app at capture time (not at step time) is what the image shows; the client
+        // checks this context against its do-not-watch policy before the image goes anywhere.
+        let before = AXInspector.frontmostContext().context
         Task { @MainActor in
             do {
                 let shot = try await captureJPEG(displayID: displayID)
@@ -49,11 +52,19 @@ enum Screenshot {
                     emitFailure(id: id)
                     return
                 }
-                Output.emit([
+                // If the frontmost app/window/URL changed while capturing, we can't say which one the
+                // image shows: fail closed and discard it.
+                guard AXInspector.frontmostContext().context == before else {
+                    emitFailure(id: id)
+                    return
+                }
+                var line: [String: Any] = [
                     "type": "screenshot", "ts": nowMs(), "id": id.json,
                     "jpegBase64": shot.jpeg.base64EncodedString(),
                     "width": shot.width, "height": shot.height,
-                ])
+                ]
+                line.merge(before.fields) { _, new in new }
+                Output.emit(line)
             } catch {
                 Output.error("screenshot capture failed")
                 emitFailure(id: id)

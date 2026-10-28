@@ -78,6 +78,8 @@ final class CaptureController {
         let isTerminal: Bool
         let ts: Int64
         let context: AppContext
+        /// Process that owned the focused field; a flush after focus moved to another process is a context switch.
+        let pid: pid_t?
         let field: [String: Any]
         var text: String = ""
         var keystrokes = 0
@@ -177,9 +179,13 @@ final class CaptureController {
     }
 
     private func handleClick(at point: CGPoint) {
-        flushTyping()
         let el = AXInspector.element(at: point)
-        let context = el.flatMap { AXInspector.pid(of: $0) }.map { AXInspector.context(forPid: $0) }
+        let clickPid = el.flatMap { AXInspector.pid(of: $0) }
+        // A click into another process (or one we can't attribute) flushes typing as a context switch.
+        if let buffer = typing {
+            flushTyping(reason: clickPid != nil && clickPid == buffer.pid ? .click : .context)
+        }
+        let context = clickPid.map { AXInspector.context(forPid: $0) }
             ?? AXInspector.frontmostContext().context
         var line: [String: Any] = ["type": "click", "ts": nowMs(), "target": AXInspector.clickTarget(el)]
         line.merge(context.fields) { _, new in new }
@@ -201,21 +207,23 @@ final class CaptureController {
         }
 
         if raw.keyCode == Self.keyReturn || raw.keyCode == Self.keyEnter || raw.keyCode == Self.keyTab {
-            flushTyping()
+            flushTyping(reason: .key)
             return
         }
 
         // Use only the focus snapshot taken in the tap callback; never re-query here.
         guard let field = key.focused else { return }
         if let current = typing, !CFEqual(current.element, field) {
-            flushTyping()
+            let fieldPid = AXInspector.pid(of: field)
+            flushTyping(reason: fieldPid != nil && fieldPid == current.pid ? .field : .context)
         }
         if typing == nil {
-            let (context, _) = AXInspector.frontmostContext()
+            let (context, frontPid) = AXInspector.frontmostContext()
             typing = TypingBuffer(
                 element: field, secure: key.secure,
                 isTerminal: AXInspector.isTerminal(bundleId: context.bundleId, element: field),
-                ts: nowMs(), context: context, field: AXInspector.fieldInfo(field))
+                ts: nowMs(), context: context, pid: AXInspector.pid(of: field) ?? frontPid,
+                field: AXInspector.fieldInfo(field))
         }
         if key.secure, typing?.secure == false {
             // The same field turned secure mid-buffer: forget everything typed into it.
@@ -256,16 +264,27 @@ final class CaptureController {
     private func restartTypingTimer() {
         typingTimer?.invalidate()
         typingTimer = Timer.scheduledTimer(withTimeInterval: Self.typingPause, repeats: false) { _ in
-            MainActor.assumeIsolated { CaptureController.shared?.flushTyping() }
+            MainActor.assumeIsolated { CaptureController.shared?.flushTyping(reason: .idle) }
         }
     }
 
-    func flushTyping() {
+    /// Why a typing buffer was flushed. `.context` means focus already left the app/window the text was
+    /// typed in, so the client must not take a screenshot for it (it would show the new context).
+    enum FlushReason: String {
+        case idle, key, field, click, context
+    }
+
+    func flushTyping(reason: FlushReason) {
         typingTimer?.invalidate()
         typingTimer = nil
         guard let buffer = typing else { return }
         typing = nil
         guard buffer.secure || !buffer.text.isEmpty else { return }
+        var reason = reason
+        // Whatever triggered the flush, if another process is frontmost now it is a context switch.
+        if reason != .context, NSWorkspace.shared.frontmostApplication?.processIdentifier != buffer.pid {
+            reason = .context
+        }
         let visibleLine: String? = (buffer.isTerminal && !buffer.secure)
             ? AXInspector.terminalLastLine(buffer.element) : nil
         var line: [String: Any] = [
@@ -275,6 +294,7 @@ final class CaptureController {
             "field": buffer.field,
             "isTerminal": buffer.isTerminal,
             "visibleLine": jsonValue(visibleLine),
+            "flushReason": reason.rawValue,
         ]
         line.merge(buffer.context.fields) { _, new in new }
         Output.emit(line)
@@ -292,8 +312,9 @@ final class CaptureController {
         guard !paused else { return }
         let (context, _) = AXInspector.frontmostContext()
         guard context != lastContext else { return }
-        if let last = lastContext, last.bundleId != context.bundleId || last.window != context.window {
-            flushTyping()
+        if let last = lastContext, last.bundleId != context.bundleId || last.window != context.window
+            || last.url != context.url {
+            flushTyping(reason: .context)
         }
         lastContext = context
         var line: [String: Any] = ["type": "app"]

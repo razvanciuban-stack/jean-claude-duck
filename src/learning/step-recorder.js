@@ -64,9 +64,11 @@ function createStepRecorder({ policy, journal, onWatchingChange = () => {}, onSc
     return step;
   }
 
-  function commit(step) {
+  // screenshot=false when the step's context is already gone (e.g. typing flushed by an app switch):
+  // a capture now would show the new context, not this step.
+  function commit(step, { screenshot = true } = {}) {
     journal.append(step);
-    onScreenshotWanted(step.id);
+    if (screenshot) onScreenshotWanted(step.id);
   }
 
   function handle(event) {
@@ -93,10 +95,11 @@ function createStepRecorder({ policy, journal, onWatchingChange = () => {}, onSc
   function handleTyped(event, c) {
     if (event.secure || typeof event.text !== 'string' || event.text === '') return;
     const f = event.field || {};
+    const wantShot = event.flushReason !== 'context';
     const terminal = TERMINAL_BUNDLES.includes(c.bundleId) || event.isTerminal === true;
     if (terminal) {
       if (!currentPolicy.terminalCommandAllowed({ typed: event.text, visibleLine: event.visibleLine })) return;
-      commit(build(event, c, 'command', { value: event.text, target: null }));
+      commit(build(event, c, 'command', { value: event.text, target: null }), { screenshot: wantShot });
       return;
     }
     const labels = [f.title, f.placeholder, f.description].filter((l) => typeof l === 'string' && l);
@@ -104,7 +107,7 @@ function createStepRecorder({ policy, journal, onWatchingChange = () => {}, onSc
     const ok = checks.every((fieldLabel) =>
       currentPolicy.typedTextAllowed({ bundleId: c.bundleId, isTerminal: false, secure: !!event.secure, fieldLabel }));
     if (!ok) return;
-    commit(build(event, c, 'type', { value: event.text, target: { role: f.role ?? null, title: f.title ?? null } }));
+    commit(build(event, c, 'type', { value: event.text, target: { role: f.role ?? null, title: f.title ?? null } }), { screenshot: wantShot });
   }
 
   function setPolicy(p) {

@@ -192,3 +192,15 @@ test('HelperClient stop/start does not orphan a child or emit after final stop',
     assert.throws(() => process.kill(pid, 0), 'child ' + pid + ' still alive');
   }
 });
+
+test('typed step flushed by a context switch is journaled without a screenshot request', () => {
+  const { journal, rec, shots } = setup();
+  rec.handle({ type: 'app', ...safari });
+  rec.handle({ type: 'typed', ts: 2, text: 'hello world', secure: false, field: field('Search'), isTerminal: false, visibleLine: null, flushReason: 'context', ...safari });
+  rec.handle({ type: 'typed', ts: 3, text: 'git status', secure: false, field: field('Terminal'), isTerminal: true, visibleLine: '$ git status', flushReason: 'context', ...iterm });
+  const steps = journal.readSince(null);
+  assert.deepStrictEqual(steps.map((s) => s.action), ['type', 'command']);
+  assert.deepStrictEqual(shots, []);
+  rec.handle({ type: 'typed', ts: 4, text: 'more', secure: false, field: field('Search'), isTerminal: false, visibleLine: null, flushReason: 'idle', ...safari });
+  assert.strictEqual(shots.length, 1);
+});
