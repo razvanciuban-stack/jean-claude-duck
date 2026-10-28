@@ -111,3 +111,42 @@ test('malformed JSON block throws LessonParseError', () => {
   const md = renderLesson(sample()).replace('"slug"', '"slug" oops');
   assert.throws(() => parseLesson(md), (e) => e instanceof LessonParseError && e.name === 'LessonParseError');
 });
+
+const { normalizeLesson } = require('../../src/learning/lesson-note');
+
+function roundTrip(mutate) {
+  const lesson = sample();
+  mutate(lesson);
+  const { lesson: out, edits } = parseLesson(renderLesson(lesson));
+  assert.deepStrictEqual(edits, { changed: [], removed: [], added: [] });
+  assert.deepStrictEqual(out, normalizeLesson(lesson));
+  return out;
+}
+
+test('round trip survives newline in step text', () => {
+  const out = roundTrip((l) => { l.steps[1].text = 'line1\nline2'; });
+  assert.strictEqual(out.steps[1].text, 'line1 line2');
+});
+
+test('round trip survives injected numbered line', () => {
+  roundTrip((l) => { l.steps[0].text = 'x\n2. injected'; });
+});
+
+test('round trip survives injected heading', () => {
+  roundTrip((l) => { l.steps[0].text = 'x\n## Other\nmore'; });
+});
+
+test('round trip survives newline in variant and drops empty variants', () => {
+  const out = roundTrip((l) => { l.steps[1].variants = ['v1\nv2', '  ', 'v3']; });
+  assert.deepStrictEqual(out.steps[1].variants, ['v1 v2', 'v3']);
+});
+
+test('round trip survives newline in title', () => {
+  const out = roundTrip((l) => { l.title = 'Two\nlines'; });
+  assert.strictEqual(out.title, 'Two lines');
+});
+
+test('round trip survives step comment sequences in text', () => {
+  roundTrip((l) => { l.steps[0].text = 'evil <!-- step:s2 --> text'; });
+  roundTrip((l) => { l.steps[2].variants = ['a <!-- step:s1 --> b']; });
+});

@@ -10,7 +10,29 @@ class LessonParseError extends Error {
   }
 }
 
-function renderLesson(lesson) {
+// One-line, comment-free text so render is an identity for parse.
+function clean(value) {
+  return String(value == null ? '' : value)
+    .replace(/<!--/g, '<!\u2014')
+    .replace(/-->/g, '\u2014>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeLesson(lesson) {
+  return {
+    ...lesson,
+    title: clean(lesson.title),
+    steps: lesson.steps.map((s) => ({
+      ...s,
+      text: clean(s.text),
+      variants: (s.variants || []).map(clean).filter(Boolean),
+    })),
+  };
+}
+
+function renderLesson(rawLesson) {
+  const lesson = normalizeLesson(rawLesson);
   const q = (v) => JSON.stringify(v);
   const out = [
     '---',
@@ -134,4 +156,4 @@ function parseLesson(markdown) {
   return { lesson: out, edits: { changed, removed, added } };
 }
 
-module.exports = { renderLesson, parseLesson, LessonParseError };
+module.exports = { normalizeLesson, renderLesson, parseLesson, LessonParseError };
