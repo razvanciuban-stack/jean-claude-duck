@@ -1,7 +1,11 @@
 // knowledge.js — grow the Mysthi knowledge base (tools, paths, conventions, shortcuts, settings)
 const { redact } = require('./redact');
 const { chatJSON } = require('../services/ollama');
-const { TEXT_MODEL } = require('./config');
+const { TEXT_MODEL, LEARNING_TIMEOUT_MS, LEARNING_NUM_CTX } = require('./config');
+
+// Same bounds as task grouping: a long segment is sent in windows, each step line clipped
+const MAX_STEPS_PER_CALL = 120;
+const MAX_FIELD = 200;
 const { describeStep } = require('./lessons');
 
 const KNOWLEDGE_PROMPT = [
@@ -39,18 +43,25 @@ function existingFacts(md) {
 }
 
 async function extractKnowledge({ steps, vault, ask = chatJSON, today }) {
-  const res = await ask({
-    model: TEXT_MODEL,
-    messages: [
-      { role: 'system', content: KNOWLEDGE_PROMPT },
-      { role: 'user', content: JSON.stringify({ steps: (steps || []).map(describeStep) }) },
-    ],
-  });
-  if (!res || !Array.isArray(res.facts)) throw new Error('Knowledge response has no facts array');
+  const lines = (steps || []).map((st) => describeStep(st).slice(0, MAX_FIELD));
+  const facts = [];
+  for (let i = 0; i < lines.length; i += MAX_STEPS_PER_CALL) {
+    const res = await ask({
+      model: TEXT_MODEL,
+      messages: [
+        { role: 'system', content: KNOWLEDGE_PROMPT },
+        { role: 'user', content: JSON.stringify({ steps: lines.slice(i, i + MAX_STEPS_PER_CALL) }) },
+      ],
+      timeoutMs: LEARNING_TIMEOUT_MS,
+      options: { num_ctx: LEARNING_NUM_CTX },
+    });
+    if (!res || !Array.isArray(res.facts)) throw new Error('Knowledge response has no facts array');
+    facts.push(...res.facts);
+  }
 
   const groups = new Map(); // slug -> { topic, md, known, fresh: [] }
   const added = [];
-  for (const f of res.facts) {
+  for (const f of facts) {
     if (!f || typeof f !== 'object') continue;
     const fact = safe(f.fact);
     if (!fact) continue;
@@ -82,4 +93,4 @@ async function extractKnowledge({ steps, vault, ask = chatJSON, today }) {
   return added;
 }
 
-module.exports = { extractKnowledge, topicSlug, KNOWLEDGE_PROMPT };
+module.exports = { extractKnowledge, topicSlug, KNOWLEDGE_PROMPT, MAX_STEPS_PER_CALL, MAX_FIELD };

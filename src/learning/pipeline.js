@@ -95,10 +95,20 @@ function localDate(ms) {
 function isConnectionError(err) {
   if (!err) return false;
   if (CONNECTION_CODES.has(err.code)) return true;
-  return /ECONNREFUSED|ECONNRESET|ENOTFOUND|EHOSTUNREACH|socket hang up|fetch failed|Ollama timeout/i.test(String(err.message || ''));
+  // A request timeout ("Ollama timeout") is NOT a connection error: the server answered the connection
+  // but was too slow, so it counts as an attempt and a segment can't be retried forever.
+  return /ECONNREFUSED|ECONNRESET|ENOTFOUND|EHOSTUNREACH|socket hang up|fetch failed/i.test(String(err.message || ''));
 }
 
-function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, getIdleMs }) {
+// Thrown when the user came back (or turned learning off) between tasks: stop, keep progress, don't count
+class Interrupted extends Error {
+  constructor(reason) {
+    super(reason);
+    this.interrupted = reason;
+  }
+}
+
+function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, getIdleMs, isEnabled = () => true }) {
   const d = { ...REAL_DEPS, ...deps };
   const state = { lastRunAt: null, lastResult: null, pending: 0, running: false };
 
@@ -124,6 +134,8 @@ function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, g
       if (!steps.length) continue;
       const key = [...task.stepIds].sort().join(',');
       if (prog.learnedTaskKeys.includes(key)) continue;
+      if (!isEnabled()) throw new Interrupted('disabled');
+      if (getIdleMs() < IDLE_THRESHOLD_MS) throw new Interrupted('not-idle');
       const res = await d.learnTask({ task, steps, lessons, vault, today });
       prog.learnedTaskKeys.push(key);
       prog.results.push({ kind: res.kind, lesson: { slug: res.lesson.slug, title: res.lesson.title }, changes: res.changes || [] });
@@ -140,6 +152,10 @@ function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, g
     appendDailyLog({ vault, date: today, notes: ["Skipped a stretch of activity Mysthi couldn't make sense of"] });
     journal.markProcessed(segment[segment.length - 1].id);
     clearProgress(stateDir);
+  }
+
+  async function modelAvailable() {
+    try { return !!(await d.isAvailable(TEXT_MODEL)); } catch { return false; }
   }
 
   async function run() {
@@ -159,7 +175,11 @@ function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, g
       try {
         await processSegment(segment, today);
       } catch (err) {
-        if (err && err.connection || isConnectionError(err)) {
+        if (err && err.interrupted) {
+          state.lastResult = err.interrupted;
+          return err.interrupted;
+        }
+        if (err && err.connection || isConnectionError(err) || !(await modelAvailable())) {
           state.lastResult = 'model-unavailable';
           return 'model-unavailable';
         }
@@ -201,4 +221,4 @@ function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, g
   return { runIfIdle, status };
 }
 
-module.exports = { createPipeline, recordWeek, readWeek, writeWeek };
+module.exports = { createPipeline, recordWeek, readWeek, writeWeek, isConnectionError };

@@ -263,3 +263,19 @@ test('loadLessons applies user edits and rewrites JSON block', () => {
   assert.strictEqual(JSON.parse(json).steps[0].text, 'New');
   assert.strictEqual(JSON.parse(json).steps[0].userEdited, true);
 });
+
+test('match and merge calls set the learning timeout and num_ctx', async () => {
+  const { LEARNING_TIMEOUT_MS, LEARNING_NUM_CTX } = require('../../src/learning/config');
+  const { vault } = tmpVault();
+  await learnNew(vault);
+  const ask = scripted([
+    { slug: 'export-the-weekly-report' },
+    (args) => ({ steps: JSON.parse(args.messages[1].content).existing.map((s) => ({ id: s.id, text: s.text })), changes: [] }),
+  ]);
+  await learnTask({ task, steps, lessons: loadLessons(vault), vault, ask, today: '2026-10-02' });
+  assert.strictEqual(ask.calls.length, 2);
+  for (const c of ask.calls) {
+    assert.strictEqual(c.timeoutMs, LEARNING_TIMEOUT_MS);
+    assert.strictEqual(c.options.num_ctx, LEARNING_NUM_CTX);
+  }
+});

@@ -6,7 +6,7 @@ const os = require('os');
 const path = require('path');
 const { createJournal } = require('../../src/learning/journal');
 const { createVault } = require('../../src/learning/vault');
-const { createPipeline, recordWeek, readWeek } = require('../../src/learning/pipeline');
+const { createPipeline, recordWeek, readWeek, isConnectionError } = require('../../src/learning/pipeline');
 const { appendDailyLog } = require('../../src/learning/reports');
 
 const MIN = 60000;
@@ -306,4 +306,88 @@ test('appendDailyLog skips bullets that already exist', () => {
   appendDailyLog({ vault: v, date: '2026-10-28', lessons: [l], facts: [] });
   appendDailyLog({ vault: v, date: '2026-10-28', lessons: [l], facts: [] });
   assert.strictEqual((v.read('log/2026-10-28.md').match(/\[\[lessons\/a\|A\]\]/g) || []).length, 1);
+});
+
+test('timeouts count as attempts: a slow model cannot retry a segment forever', async () => {
+  const ctx = setup();
+  ctx.journal.append(step('a', T0));
+  const { deps } = fakeDeps({ extractKnowledge: async () => { throw new Error('Ollama timeout'); } });
+  const p = make(ctx, deps);
+  assert.strictEqual(await p.runIfIdle(), 'ran');
+  assert.strictEqual(await p.runIfIdle(), 'ran');
+  assert.strictEqual(ctx.journal.lastProcessed(), null);
+  await p.runIfIdle();
+  assert.strictEqual(ctx.journal.lastProcessed(), 'a');
+  assert.strictEqual(p.status().lastResult, 'skipped segment after 3 failures');
+});
+
+test('isConnectionError: timeout is not a connection error, refused / unreachable are', () => {
+  assert.strictEqual(isConnectionError(new Error('Ollama timeout')), false);
+  assert.strictEqual(isConnectionError(new Error('connect ECONNREFUSED 127.0.0.1:11434')), true);
+  assert.strictEqual(isConnectionError(Object.assign(new Error('x'), { code: 'ECONNREFUSED' })), true);
+  assert.strictEqual(isConnectionError(new Error('socket hang up')), true);
+  assert.strictEqual(isConnectionError(new Error('Merge response has no steps array')), false);
+});
+
+test('model gone after a failure: not counted as an attempt', async () => {
+  const ctx = setup();
+  ctx.journal.append(step('a', T0));
+  let probes = 0;
+  const { deps } = fakeDeps({
+    isAvailable: async () => ++probes === 1,
+    learnTask: async () => { throw new Error('Ollama returned invalid JSON'); },
+  });
+  const p = make(ctx, deps);
+  assert.strictEqual(await p.runIfIdle(), 'model-unavailable');
+  const prog = JSON.parse(fs.readFileSync(path.join(ctx.dir, 'progress.json'), 'utf8'));
+  assert.strictEqual(prog.attempts, 0);
+});
+
+test('re-checks idle before each learnTask: stops mid-segment, keeps learned tasks, no pointer advance', async () => {
+  const ctx = setup();
+  ctx.journal.append(step('a', T0));
+  ctx.journal.append(step('b', T0 + 1000));
+  let idle = 10 * MIN;
+  const seen = [];
+  const { deps } = fakeDeps({
+    groupTasks: two,
+    learnTask: async ({ task }) => {
+      seen.push(task.name);
+      idle = 0; // user comes back after the first task
+      return { kind: 'new', lesson: { slug: task.name.toLowerCase(), title: task.name }, changes: [] };
+    },
+  });
+  const p = make(ctx, deps, { getIdleMs: () => idle });
+  assert.strictEqual(await p.runIfIdle(), 'not-idle');
+  assert.deepStrictEqual(seen, ['One']);
+  assert.strictEqual(ctx.journal.lastProcessed(), null);
+  const prog = JSON.parse(fs.readFileSync(path.join(ctx.dir, 'progress.json'), 'utf8'));
+  assert.strictEqual(prog.learnedTaskKeys.length, 1);
+  assert.strictEqual(prog.attempts, 0);
+  idle = 10 * MIN;
+  assert.strictEqual(await p.runIfIdle(), 'ran');
+  assert.deepStrictEqual(seen, ['One', 'Two']);
+  assert.strictEqual(ctx.journal.lastProcessed(), 'b');
+});
+
+test('re-checks isEnabled before each learnTask: disabling stops without advancing', async () => {
+  const ctx = setup();
+  ctx.journal.append(step('a', T0));
+  ctx.journal.append(step('b', T0 + 1000));
+  let enabled = true;
+  const seen = [];
+  const { deps } = fakeDeps({
+    groupTasks: two,
+    learnTask: async ({ task }) => {
+      seen.push(task.name);
+      enabled = false;
+      return { kind: 'new', lesson: { slug: task.name.toLowerCase(), title: task.name }, changes: [] };
+    },
+  });
+  const p = make(ctx, deps, { isEnabled: () => enabled });
+  assert.strictEqual(await p.runIfIdle(), 'disabled');
+  assert.deepStrictEqual(seen, ['One']);
+  assert.strictEqual(ctx.journal.lastProcessed(), null);
+  const prog = JSON.parse(fs.readFileSync(path.join(ctx.dir, 'progress.json'), 'utf8'));
+  assert.strictEqual(prog.learnedTaskKeys.length, 1);
 });

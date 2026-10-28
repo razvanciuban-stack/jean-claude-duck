@@ -77,3 +77,27 @@ test('truncates description and value to 200 chars in the listing', async () => 
   assert.ok(!content.includes('v'.repeat(201)));
   assert.ok(!content.includes('d'.repeat(201)));
 });
+
+test('isTask given as the string "false" (any case, padded) is false', async () => {
+  const ask = async () => ({ tasks: [
+    { name: 'A', stepIds: ['a'], isTask: 'false' },
+    { name: 'B', stepIds: ['b'], isTask: ' FALSE ' },
+    { name: 'C', stepIds: ['c'], isTask: 'true' },
+    { name: 'D', stepIds: ['d'], isTask: false },
+    { name: 'E', stepIds: ['e'] },
+  ] });
+  const out = await groupTasks([mk('a', 0), mk('b', 1), mk('c', 2), mk('d', 3), mk('e', 4)], ask);
+  assert.deepStrictEqual(out.map((t) => t.isTask), [false, false, true, false, true]);
+});
+
+test('every grouping call sets the learning timeout and num_ctx', async () => {
+  const { LEARNING_TIMEOUT_MS, LEARNING_NUM_CTX } = require('../../src/learning/config');
+  const seen = [];
+  const ask = async (args) => { seen.push(args); return { tasks: [] }; };
+  await groupTasks(Array.from({ length: 130 }, (_, i) => mk(`s${i}`, i)), ask);
+  assert.strictEqual(seen.length, 2);
+  for (const a of seen) {
+    assert.strictEqual(a.timeoutMs, LEARNING_TIMEOUT_MS);
+    assert.strictEqual(a.options.num_ctx, LEARNING_NUM_CTX);
+  }
+});

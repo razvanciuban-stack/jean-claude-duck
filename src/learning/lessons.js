@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const { renderLesson, parseLesson, LessonParseError } = require('./lesson-note');
 const { redact } = require('./redact');
 const { chatJSON } = require('../services/ollama');
-const { TEXT_MODEL, CONFIDENT_AT } = require('./config');
+const { TEXT_MODEL, CONFIDENT_AT, LEARNING_TIMEOUT_MS, LEARNING_NUM_CTX } = require('./config');
 
 const MATCH_PROMPT = [
   'You match a newly observed computer task to previously learned lessons.',
@@ -230,6 +230,8 @@ async function learnTask({ task, steps, lessons, vault, ask = chatJSON, today })
           candidates: candidates.map((l) => ({ slug: l.slug, title: l.title, apps: l.apps, steps: l.steps.map((s) => s.text) })),
         }) },
       ],
+      timeoutMs: LEARNING_TIMEOUT_MS,
+      options: { num_ctx: LEARNING_NUM_CTX },
     });
     const slug = res && typeof res.slug === 'string' ? res.slug : null;
     if (slug && candidates.some((c) => c.slug === slug)) matchedSlug = slug;
@@ -269,6 +271,8 @@ async function learnTask({ task, steps, lessons, vault, ask = chatJSON, today })
         run: runPayload,
       }) },
     ],
+    timeoutMs: LEARNING_TIMEOUT_MS,
+    options: { num_ctx: LEARNING_NUM_CTX },
   });
   if (!res || !Array.isArray(res.steps)) throw new Error('Merge response has no steps array');
   const changes = (Array.isArray(res.changes) ? res.changes : []).map(safe).filter(Boolean);

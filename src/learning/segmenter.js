@@ -1,6 +1,6 @@
 // segmenter.js — splits journal steps into time segments and asks the local model to group them into tasks
 const { chatJSON } = require('../services/ollama');
-const { TEXT_MODEL, SEGMENT_GAP_MS } = require('./config');
+const { TEXT_MODEL, SEGMENT_GAP_MS, LEARNING_TIMEOUT_MS, LEARNING_NUM_CTX } = require('./config');
 
 const MAX_STEPS_PER_CALL = 120;
 const MAX_FIELD = 200;
@@ -36,6 +36,13 @@ function listing(steps) {
   }).join('\n');
 }
 
+// Missing means "is a task"; the string "false" (any case, any padding) means false
+function parseIsTask(v) {
+  if (v === undefined || v === null) return true;
+  if (typeof v === 'string') return v.trim().toLowerCase() !== 'false';
+  return Boolean(v);
+}
+
 function validate(raw, steps, used) {
   if (!raw || !Array.isArray(raw.tasks)) return null;
   const known = new Set(steps.map((s) => s.id));
@@ -52,7 +59,7 @@ function validate(raw, steps, used) {
       }
     }
     if (!stepIds.length) continue;
-    out.push({ name, stepIds, isTask: t.isTask === undefined || t.isTask === null ? true : Boolean(t.isTask) });
+    out.push({ name, stepIds, isTask: parseIsTask(t.isTask) });
   }
   return out;
 }
@@ -69,6 +76,8 @@ async function groupTasks(segment, ask = chatJSON) {
           { role: 'system', content: GROUP_PROMPT },
           { role: 'user', content: listing(win) },
         ],
+        timeoutMs: LEARNING_TIMEOUT_MS,
+        options: { num_ctx: LEARNING_NUM_CTX },
       });
       const tasks = validate(raw, win, used);
       if (!tasks) return null;
@@ -80,4 +89,4 @@ async function groupTasks(segment, ask = chatJSON) {
   return result;
 }
 
-module.exports = { splitAtBoundaries, groupTasks, GROUP_PROMPT };
+module.exports = { splitAtBoundaries, groupTasks, GROUP_PROMPT, MAX_STEPS_PER_CALL, MAX_FIELD };

@@ -2,7 +2,7 @@
 // One describe in flight at a time, >= minIntervalMs between starts; screenshots live in memory only.
 const { chat } = require('../services/ollama');
 const { redact } = require('./redact');
-const { VISION_MODEL, VISION_QUEUE_CAP, VISION_MIN_INTERVAL_MS } = require('./config');
+const { VISION_MODEL, VISION_QUEUE_CAP, VISION_MIN_INTERVAL_MS, VISION_TIMEOUT_MS, LEARNING_NUM_CTX } = require('./config');
 
 const DESCRIBE_PROMPT = 'Two screenshots: before and after one user action (or only after). In one sentence, describe what the user just did and what changed. Name the app and the UI element. Do not repeat any passwords, keys or numbers you can read.';
 
@@ -11,7 +11,8 @@ function defaultDescribe(prevJpeg, jpeg) {
   return chat({
     model: VISION_MODEL,
     messages: [{ role: 'user', content: DESCRIBE_PROMPT, images }],
-    options: { num_predict: 60 },
+    options: { num_predict: 60, num_ctx: LEARNING_NUM_CTX },
+    timeoutMs: VISION_TIMEOUT_MS,
   });
 }
 

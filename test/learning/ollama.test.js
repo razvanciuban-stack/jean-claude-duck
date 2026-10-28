@@ -54,3 +54,13 @@ test('isAvailable false when model missing', async () => {
   assert.strictEqual(await isAvailable('qwen2.5vl:7b'), false);
   assert.strictEqual(await isAvailable('llama3.1:8b'), true);
 });
+
+test('vision defaultDescribe sends num_ctx with its request', async () => {
+  let payload;
+  handler = (req, res, body) => { payload = JSON.parse(body); res.end(JSON.stringify({ message: { content: 'described' } })); };
+  const { defaultDescribe } = require('../../src/learning/vision');
+  const { LEARNING_NUM_CTX } = require('../../src/learning/config');
+  assert.strictEqual(await defaultDescribe(null, 'aGk='), 'described');
+  assert.strictEqual(payload.options.num_ctx, LEARNING_NUM_CTX);
+  assert.strictEqual(payload.options.num_predict, 60);
+});

@@ -39,3 +39,36 @@ test('knowledge redacts, and ask failure writes nothing', async () => {
   await assert.rejects(extractKnowledge({ steps, vault, ask: async () => { throw new Error('down'); }, today: 'd' }), /down/);
   assert.deepStrictEqual(vault.list('knowledge'), before);
 });
+
+test('knowledge chunks long segments (<=120 steps per call), clips lines to 200 chars, merges facts', async () => {
+  const { LEARNING_TIMEOUT_MS, LEARNING_NUM_CTX } = require('../../src/learning/config');
+  const vault = tmpVault();
+  const long = Array.from({ length: 250 }, (_, i) => ({
+    id: `s${i}`, ts: i, bundleId: 'b', appName: 'Terminal', action: 'command', value: `echo ${i} ` + 'x'.repeat(400), target: null, redactions: [],
+  }));
+  const calls = [];
+  const ask = async (args) => {
+    calls.push(args);
+    const n = calls.length;
+    return { facts: [{ topic: 'Shell', fact: `Fact ${n}` }, { topic: 'Shell', fact: 'Shared fact' }] };
+  };
+  const out = await extractKnowledge({ steps: long, vault, ask, today: '2026-10-28' });
+  const sizes = calls.map((c) => JSON.parse(c.messages[1].content).steps.length);
+  assert.deepStrictEqual(sizes, [120, 120, 10]);
+  for (const c of calls) {
+    assert.strictEqual(c.timeoutMs, LEARNING_TIMEOUT_MS);
+    assert.strictEqual(c.options.num_ctx, LEARNING_NUM_CTX);
+    for (const line of JSON.parse(c.messages[1].content).steps) assert.ok(line.length <= 200);
+  }
+  assert.deepStrictEqual(out.map((f) => f.fact), ['Fact 1', 'Shared fact', 'Fact 2', 'Fact 3']);
+  assert.strictEqual((vault.read('knowledge/shell.md').match(/^- /gm) || []).length, 4);
+});
+
+test('knowledge: a failing chunk rejects and writes nothing', async () => {
+  const vault = tmpVault();
+  const long = Array.from({ length: 130 }, (_, i) => ({ id: `s${i}`, ts: i, bundleId: 'b', appName: 'A', action: 'click', target: { title: 't' }, redactions: [] }));
+  let n = 0;
+  const ask = async () => (++n === 2 ? { nope: true } : { facts: [{ topic: 'X', fact: 'Y' }] });
+  await assert.rejects(extractKnowledge({ steps: long, vault, ask, today: 'd' }), /no facts array/);
+  assert.deepStrictEqual(vault.list('knowledge'), []);
+});
