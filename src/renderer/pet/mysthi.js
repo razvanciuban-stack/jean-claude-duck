@@ -2,6 +2,7 @@
 
 const NS = 'http://www.w3.org/2000/svg';
 const LINE = '#4a4a4a'; // thin dark-grey cuts that separate legs from body on any desktop
+const SIT_SCALE = 0.78; // sitting height ≈ walking height (ear tips to paws)
 
 const SIT_POSE = `
   <g class="tail">
@@ -54,7 +55,8 @@ function createMysthiSVG() {
   svg.style.overflow = 'visible';
   svg.dataset.eyes = 'open';
 
-  const sit = el('g', { class: 'pose sit' }, svg);
+  // The front-on drawing is larger than the side-on walk; shrink it around her paws so both poses match
+  const sit = el('g', { class: 'pose sit', transform: `translate(100 231) scale(${SIT_SCALE}) translate(-100 -231)` }, svg);
   sit.innerHTML = SIT_POSE;
   for (const eye of sit.querySelectorAll('.eye')) {
     const cx = +eye.dataset.cx, cy = +eye.dataset.cy;
