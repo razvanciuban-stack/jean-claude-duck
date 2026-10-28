@@ -88,8 +88,19 @@ enum AXInspector {
         return el
     }
 
+    /// Fails closed: only a definite answer counts as not secure. A successful read of a different
+    /// subrole, or `.noValue` / `.attributeUnsupported`, means not secure; any other AX error
+    /// (timeout, cannot complete, invalid element, API disabled, ...) is treated as secure.
     static func isSecure(_ el: AXUIElement) -> Bool {
-        string(el, kAXSubroleAttribute as String) == "AXSecureTextField"
+        var value: CFTypeRef?
+        switch AXUIElementCopyAttributeValue(el, kAXSubroleAttribute as CFString, &value) {
+        case .success:
+            return (value as? String) == "AXSecureTextField"
+        case .noValue, .attributeUnsupported:
+            return false
+        default:
+            return true
+        }
     }
 
     // MARK: - Click target

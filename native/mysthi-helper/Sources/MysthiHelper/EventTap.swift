@@ -150,7 +150,9 @@ final class CaptureController {
     func receiveKey(_ raw: RawEvent, readChars: () -> String?) {
         guard !paused else { return }
         let focused = AXInspector.focusedElement()
-        let secure = IsSecureEventInputEnabled() || (focused.map(AXInspector.isSecure) ?? false)
+        // Fails closed: no focused element (AX error/timeout/untrusted) counts as secure, as does any
+        // subrole read error other than noValue/attributeUnsupported. Secure => chars are never read.
+        let secure = IsSecureEventInputEnabled() || (focused.map(AXInspector.isSecure) ?? true)
         let cmdOrCtrl = raw.flags.contains(.maskCommand) || raw.flags.contains(.maskControl)
         let chars = (secure || cmdOrCtrl) ? nil : readChars()
         enqueue(.key(KeySnapshot(raw: raw, focused: focused, secure: secure, chars: chars)))
