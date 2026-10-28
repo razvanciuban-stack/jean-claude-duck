@@ -1,4 +1,6 @@
-// reports.js — Markdown reports written into the vault (daily log; weekly report added later)
+// reports.js — Markdown reports written into the vault (daily log and weekly report)
+const { parseLesson, LessonParseError } = require('./lesson-note');
+const { WEEK_MS } = require('./config');
 
 const SECTIONS = ['New lessons', 'Updated lessons', 'New knowledge'];
 
@@ -93,4 +95,93 @@ function appendDailyLog({ vault, date, lessons = [], facts = [], notes = [] }) {
   vault.writeAtomic(rel, `${base}\n## Mysthi update ${date}\n\n${sectionsText(bullets, '###')}`);
 }
 
-module.exports = { appendDailyLog };
+
+function localDate(ms) {
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function lessonSection(vault, slug) {
+  const md = vault.read(`lessons/${slug}.md`);
+  if (md == null) return `### ${slug} (note removed)\n`;
+  let lesson;
+  try {
+    lesson = parseLesson(md).lesson;
+  } catch (err) {
+    if (err instanceof LessonParseError) return `### ${slug} (note unreadable — edited by hand?)\n`;
+    throw err;
+  }
+  const meta = [
+    (lesson.apps || []).length ? `Apps: ${lesson.apps.map(oneLine).join(', ')}` : null,
+    `Observed ${lesson.timesObserved || 1} time${lesson.timesObserved === 1 ? '' : 's'}`,
+    lesson.confident ? '**confident**' : null,
+  ].filter(Boolean).join(' · ');
+  const out = [`### ${link({ slug, title: lesson.title })}`, '', meta, ''];
+  lesson.steps.forEach((st, i) => {
+    out.push(`${i + 1}. ${oneLine(st.text)}`);
+    for (const v of st.variants || []) out.push(`   - Also seen: ${oneLine(v)}`);
+  });
+  return out.join('\n') + '\n';
+}
+
+function updatedLine(vault, u) {
+  const md = vault.read(`lessons/${u.slug}.md`);
+  let title = null;
+  if (md != null) {
+    try { title = parseLesson(md).lesson.title; } catch (err) { if (!(err instanceof LessonParseError)) throw err; }
+  }
+  const ch = (u.changes || []).map(oneLine).filter(Boolean).join('; ');
+  const head = title ? `- ${link({ slug: u.slug, title })}` : `- ${u.slug}${md == null ? ' (note removed)' : ' (note unreadable — edited by hand?)'}`;
+  return head + (ch ? ` — ${ch}` : '');
+}
+
+function buildWeeklyReport(vault, week, startMs, endMs) {
+  const nNew = week.newLessons.length;
+  const nUpd = week.updated.length;
+  const nFacts = week.facts.length;
+  const summary = `${nNew} new lessons, ${nUpd} updated, ${nFacts} new facts`;
+  const start = localDate(startMs);
+  const end = localDate(endMs);
+  const out = [
+    '---', 'type: mysthi-report', `period_start: ${JSON.stringify(start)}`, `period_end: ${JSON.stringify(end)}`,
+    `new_lessons: ${nNew}`, `updated_lessons: ${nUpd}`, `new_facts: ${nFacts}`, '---', '',
+    `# Mysthi weekly report: ${start} to ${end}`, '', summary, '',
+  ];
+  if (!nNew && !nUpd && !nFacts) {
+    out.push('Nothing new this week. Mysthi is still watching and will report again next week.', '');
+    return out.join('\n');
+  }
+  if (nNew) out.push('## New lessons', '', week.newLessons.map((s) => lessonSection(vault, s)).join('\n'), '');
+  if (nUpd) out.push('## Updated lessons', '', ...week.updated.map((u) => updatedLine(vault, u)), '');
+  if (nFacts) {
+    out.push('## New knowledge', '');
+    const byTopic = new Map();
+    for (const f of week.facts) {
+      const t = oneLine(f.topic) || 'General';
+      if (!byTopic.has(t)) byTopic.set(t, []);
+      byTopic.get(t).push(oneLine(f.fact));
+    }
+    for (const [t, facts] of byTopic) out.push(`### ${t}`, '', ...facts.map((f) => `- ${f}`), '');
+  }
+  return out.join('\n');
+}
+
+// Writes the report first, then resets week state; a failed write leaves state for the next tick
+function maybeWriteWeeklyReport({ vault, stateDir, now = Date.now }) {
+  const { readWeek, writeWeek } = require('./pipeline'); // lazy: pipeline requires this module
+  const week = readWeek(stateDir);
+  if (week.enabledAt == null) return { written: false };
+  const t = now();
+  const since = week.lastReportAt ?? week.enabledAt;
+  if (t - since < WEEK_MS) return { written: false };
+
+  const base = `reports/${localDate(t)}-week`;
+  let relPath = `${base}.md`;
+  for (let n = 2; vault.exists(relPath); n++) relPath = `${base}-${n}.md`;
+  vault.writeAtomic(relPath, buildWeeklyReport(vault, week, since, t));
+  writeWeek(stateDir, { ...week, lastReportAt: t, newLessons: [], updated: [], facts: [] });
+  return { written: true, relPath };
+}
+
+module.exports = { appendDailyLog, maybeWriteWeeklyReport };

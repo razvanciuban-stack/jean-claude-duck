@@ -201,4 +201,4 @@ function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, g
   return { runIfIdle, status };
 }
 
-module.exports = { createPipeline, recordWeek, readWeek };
+module.exports = { createPipeline, recordWeek, readWeek, writeWeek };
