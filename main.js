@@ -1,5 +1,6 @@
-const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, nativeImage, safeStorage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, nativeImage, safeStorage, Notification, dialog, shell, powerMonitor } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const Store = require('electron-store');
 const petWindowManager = require('./src/windows/pet-window');
 const chatWindowManager = require('./src/windows/chat-window');
@@ -10,6 +11,8 @@ const { buildSystemPrompt } = require('./src/services/personality');
 const { evaluate, getExpression } = require('./src/services/states');
 const notificationMonitor = require('./src/services/notification-monitor');
 const { ensureQuackSound, playQuack } = require('./src/services/sound');
+const { createLearning } = require('./src/learning');
+const { VAULT_DIR } = require('./src/learning/config');
 
 const store = new Store();
 let tray = null;
@@ -58,7 +61,125 @@ function updateSlimeState() {
     isIdle: systemInfo.isIdle(),
   });
   const expression = getExpression(state);
-  petWindowManager.sendState({ state, ...expression });
+  sendPetState({ state, ...expression });
+}
+
+// Every pet:state goes through here so nothing reopens the eyes while learning is on but not watching
+function sendPetState(stateData) {
+  petWindowManager.sendState(learningEyesClosed() ? { ...stateData, eyes: 'closed' } : stateData);
+}
+
+// --- Learning ---
+let learning = null;
+const reportNotifications = new Set(); // keep Notification objects alive until clicked/closed
+
+function learningEyesClosed() {
+  return !!(learning && learning.isEnabled() && !learning.isWatching());
+}
+
+function getHelperPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'mysthi-helper')
+    : path.join(__dirname, 'native', 'mysthi-helper', '.build', 'release', 'mysthi-helper');
+}
+
+function notifyReport(title, relPath) {
+  if (!Notification.isSupported()) return;
+  const n = new Notification({ title, body: relPath });
+  reportNotifications.add(n);
+  n.on('click', () => {
+    reportNotifications.delete(n);
+    shell.openPath(path.join(VAULT_DIR, relPath));
+  });
+  n.on('close', () => reportNotifications.delete(n));
+  n.show();
+}
+
+function showMissingPermissions(missing) {
+  const names = missing.map((m) => m.name).join(', ');
+  dialog.showMessageBox({
+    type: 'warning',
+    title: 'Mysthi needs permissions',
+    message: `Mysthi needs ${names} to learn how you work.`,
+    detail: 'Open System Settings, turn Jean Claude Duck (or mysthi-helper) on for each missing permission, then come back. Mysthi will pick it up automatically.',
+    buttons: [...missing.map((m) => `Open ${m.name}`), 'Later'],
+    cancelId: missing.length,
+    defaultId: 0,
+  }).then(({ response }) => {
+    if (response < missing.length) shell.openExternal(missing[response].url);
+  }).catch(() => {});
+}
+
+function showHelperUnavailable() {
+  dialog.showMessageBox({
+    type: 'error',
+    title: 'Mysthi',
+    message: "Mysthi's watcher couldn't start",
+    detail: 'Learning has been turned off. If you are running from source, build the helper with `npm run build:helper`, then choose Start learning again.',
+  }).catch(() => {});
+}
+
+function setupLearning() {
+  learning = createLearning({
+    userDataDir: app.getPath('userData'),
+    helperPath: getHelperPath(),
+    store,
+    notify: notifyReport,
+    onWatchingChange: () => updateSlimeState(),
+    onStatusChange: () => { buildTrayMenu(); updateSlimeState(); },
+    onMissingPermissions: showMissingPermissions,
+    onHelperUnavailable: showHelperUnavailable,
+    deps: { getIdleMs: () => powerMonitor.getSystemIdleTime() * 1000 },
+  });
+  learning.start(); // resumes only if the user left learning on (store key learning.enabled, default false)
+
+  globalShortcut.register('CommandOrControl+Shift+M', () => learning.togglePause());
+  petWindowManager.onLearningTogglePause(() => learning.togglePause());
+}
+
+function learningMenuItems() {
+  if (!learning) return [];
+  const on = learning.isEnabled();
+  return [
+    { label: learning.statusLabel(), enabled: false },
+    on
+      ? { label: 'Stop learning', click: () => learning.disable() }
+      : { label: 'Start learning', click: () => learning.enable() },
+    {
+      label: learning.isPaused() ? 'Resume learning' : 'Pause learning',
+      enabled: on,
+      click: () => learning.togglePause(),
+    },
+    {
+      label: 'Open lessons folder',
+      click: () => {
+        const dir = path.join(VAULT_DIR, 'lessons');
+        try { fs.mkdirSync(dir, { recursive: true }); } catch { /* openPath reports it */ }
+        shell.openPath(dir);
+      },
+    },
+    { type: 'separator' },
+  ];
+}
+// --- end Learning ---
+
+function buildTrayMenu() {
+  if (!tray) return;
+  tray.setContextMenu(Menu.buildFromTemplate([
+    {
+      label: 'Show/Hide',
+      click: () => {
+        const win = petWindowManager.getWindow();
+        if (win) win.isVisible() ? win.hide() : win.show();
+      },
+    },
+    { type: 'separator' },
+    ...learningMenuItems(),
+    { label: 'About', click: () => {
+      dialog.showMessageBox({ title: 'Jean Claude Duck', message: 'Jean Claude Duck v0.1.0\nA pixel-art desktop pet.' });
+    }},
+    { label: 'Quit', click: () => app.quit() },
+  ]));
 }
 
 // --- App lifecycle ---
@@ -108,7 +229,7 @@ function startApp() {
       petWin.webContents.send('pet:reaction', { text });
 
       // Surprised animation — wide eyes + shake
-      petWin.webContents.send('pet:state', { state: 'surprised', eyes: 'O O', mouth: '!' });
+      sendPetState({ state: 'surprised', eyes: 'O O', mouth: '!' });
       setTimeout(() => {
         updateSlimeState(); // restore normal state after 2 seconds
       }, 2000);
@@ -120,21 +241,8 @@ function startApp() {
     'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAOklEQVQ4T2NkoBAwUqifAacBjP8ZGP4zMDAwMjAwMDEQAYYmF4wmA0YTEoGxkJqJiTgXDIIwGE0GAAA+HAkRm5K/wgAAAABJRU5ErkJggg=='
   );
   tray = new Tray(icon.resize({ width: 16, height: 16 }));
-  tray.setContextMenu(Menu.buildFromTemplate([
-    {
-      label: 'Show/Hide',
-      click: () => {
-        const win = petWindowManager.getWindow();
-        if (win) win.isVisible() ? win.hide() : win.show();
-      },
-    },
-    { type: 'separator' },
-    { label: 'About', click: () => {
-      const { dialog } = require('electron');
-      dialog.showMessageBox({ title: 'Jean Claude Duck', message: 'Jean Claude Duck v0.1.0\nA pixel-art desktop pet.' });
-    }},
-    { label: 'Quit', click: () => app.quit() },
-  ]));
+  setupLearning();
+  buildTrayMenu();
 
   // Global shortcut
   globalShortcut.register('CommandOrControl+Shift+S', () => {
@@ -208,6 +316,7 @@ ipcMain.on('setup:validate', async (event, { apiKey }) => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  if (learning) learning.shutdown();
   activityMonitor.stop();
   notificationMonitor.stop();
 });

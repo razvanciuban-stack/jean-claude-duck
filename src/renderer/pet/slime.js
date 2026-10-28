@@ -113,6 +113,9 @@ function setEyesWithDirection(svg, type, dx, dy) {
     case 'blink':
       px(ex, ey + 1, 2, 1);
       break;
+    case 'closed': // learning on but not watching: a 1-px line, ignores the cursor
+      px(ex, ey + 1, 2, 1);
+      break;
     case 'squish':
       px(ex, ey + 1, 2, 1);
       px(ex, ey, 1, 1); px(ex + 1, ey, 1, 1);

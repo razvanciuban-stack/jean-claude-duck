@@ -239,6 +239,12 @@
     let blinkInterval = null;
     let eyesOpen = true;
 
+    // Temporary eye effects (squish, hearts, stars, wide) — skipped while closed (learning on, not watching)
+    function flashEyes(type) {
+      if (currentEyeType === 'closed') return;
+      setEyesWithDirection(svg, type, 0, 0);
+    }
+
     // --- Cursor direction tracking (sent from main process) ---
     ipcRenderer.on('cursor:direction', (event, { dx, dy, dist }) => {
       cursorDx = dx;
@@ -317,7 +323,7 @@
     container.addEventListener('mousedown', (e) => {
       // Squish on press!
       squish(container);
-      setEyesWithDirection(svg, 'squish', 0, 0);
+      flashEyes('squish');
 
       dragState = {
         startX: e.screenX,
@@ -351,7 +357,10 @@
         setEyesWithDirection(svg, currentEyeType, cursorDx, cursorDy);
       }, 200);
 
-      if (elapsed < 200 && dx < 5 && dy < 5) {
+      if (elapsed < 200 && dx < 5 && dy < 5 && e.altKey) {
+        // ⌥-click: toggle learning pause instead of opening chat
+        ipcRenderer.send('learning:toggle-pause');
+      } else if (elapsed < 200 && dx < 5 && dy < 5) {
         // It's a click!
         clickCount++;
         ipcRenderer.send('slime:click', {});
@@ -360,7 +369,7 @@
         // Fun reactions based on click count
         if (clickCount % 5 === 0) {
           // Every 5 clicks — hearts!
-          setEyesWithDirection(svg, 'hearts', 0, 0);
+          flashEyes('hearts');
           setMouth(svg, 'big-smile');
           spawnParticles('🐤', 5);
           setTimeout(() => {
@@ -369,7 +378,7 @@
           }, 1500);
         } else if (clickCount % 3 === 0) {
           // Every 3 clicks — stars!
-          setEyesWithDirection(svg, 'stars', 0, 0);
+          flashEyes('stars');
           spawnParticles('✨', 4);
           setTimeout(() => {
             setEyesWithDirection(svg, currentEyeType, cursorDx, cursorDy);
@@ -451,7 +460,7 @@
         stopWaterTrail();
         container.className = '';
         container.classList.add('anim-arrive-spin');
-        setEyesWithDirection(svg, 'stars', 0, 0);
+        flashEyes('stars');
         spawnParticles('🦆', 3);
         setTimeout(() => {
           container.className = '';
@@ -475,7 +484,7 @@
         container.className = '';
         container.classList.add('anim-arrive-splits');
         setMouth(svg, 'big-smile');
-        setEyesWithDirection(svg, 'squish', 0, 0);
+        flashEyes('squish');
         spawnParticles('💪', 3);
         setTimeout(() => {
           container.className = '';
@@ -538,7 +547,7 @@
         } else if (pick === 'roundhouse') {
           // Random roundhouse kick!
           container.style.animation = 'roundhouse 0.6s ease-in-out';
-          setEyesWithDirection(svg, 'wide', 0, 0);
+          flashEyes('wide');
           spawnParticles('🦆', 2);
           setTimeout(() => {
             container.style.animation = '';

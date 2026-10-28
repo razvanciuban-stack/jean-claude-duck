@@ -8,6 +8,7 @@ let petWindow = null;
 let windowStartPos = null;
 let isDragging = false;
 let eyeTrackInterval = null;
+let learningTogglePauseHandler = null;
 
 // --- Wandering state ---
 let wanderState = 'idle'; // 'idle' | 'walking' | 'paused' | 'stopped'
@@ -81,6 +82,12 @@ function create() {
     setTimeout(() => {
       if (!wanderPaused) scheduleNextWander();
     }, 3000);
+  });
+
+  // ⌥-click on the pet → toggle learning pause (only from the pet window's own renderer)
+  ipcMain.on('learning:toggle-pause', (event) => {
+    if (!petWindow || petWindow.isDestroyed() || event.sender !== petWindow.webContents) return;
+    if (learningTogglePauseHandler) learningTogglePauseHandler();
   });
 
   // --- Eye tracking ---
@@ -308,6 +315,10 @@ function resumeFollowing() {
   setTimeout(() => scheduleNextWander(), 2000);
 }
 
+function onLearningTogglePause(handler) {
+  learningTogglePauseHandler = handler;
+}
+
 function getWindow() {
   return petWindow;
 }
@@ -318,4 +329,4 @@ function sendState(stateData) {
   }
 }
 
-module.exports = { create, getWindow, sendState, pauseFollowing, resumeFollowing };
+module.exports = { create, getWindow, sendState, pauseFollowing, resumeFollowing, onLearningTogglePause };
