@@ -12,7 +12,7 @@ const { createVault } = require('./vault');
 const { createPipeline, readWeek, writeWeek } = require('./pipeline');
 const { maybeWriteWeeklyReport } = require('./reports');
 const { isAvailable } = require('../services/ollama');
-const { TEXT_MODEL, VAULT_DIR } = require('./config');
+const { TEXT_MODEL, VAULT_DIR, IDLE_THRESHOLD_MS } = require('./config');
 
 const STORE_KEY = 'learning.enabled';
 const TICK_MS = 60000;
@@ -130,6 +130,18 @@ function createLearning({
   function stopVision() {
     if (vision) vision.stop();
     vision = null;
+  }
+
+  // Note-making and screenshot descriptions share one local model, which answers one request at a time:
+  // pause descriptions while she makes notes so the big requests don't queue behind them and time out
+  async function withVisionPaused(fn) {
+    const hadVision = !!vision;
+    stopVision();
+    try {
+      return await fn();
+    } finally {
+      if (hadVision && enabled && !paused && pipeline && !vision) startVision();
+    }
   }
 
   // Fails closed: a screenshot without its own app context (e.g. an older helper) is never described
@@ -320,7 +332,8 @@ function createLearning({
       reloadPolicy();
       await checkModel();
       if (!pipeline) return;
-      await pipeline.runIfIdle();
+      if (d.getIdleMs() >= IDLE_THRESHOLD_MS) await withVisionPaused(() => pipeline.runIfIdle());
+      else await pipeline.runIfIdle(); // returns straight away when not idle
       if (!enabled) return;
       const r = d.maybeWriteWeeklyReport({ vault, stateDir, now: d.now });
       if (r && r.written) notify(REPORT_TITLE, r.relPath);
@@ -339,7 +352,7 @@ function createLearning({
     makingNotes = true;
     update();
     try {
-      const result = await pipeline.runNow();
+      const result = await withVisionPaused(() => pipeline.runNow());
       return { result, ...pipeline.status() };
     } catch {
       console.error('learning: make notes failed');

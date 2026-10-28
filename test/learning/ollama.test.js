@@ -64,3 +64,12 @@ test('vision defaultDescribe sends num_ctx with its request', async () => {
   assert.strictEqual(payload.options.num_ctx, LEARNING_NUM_CTX);
   assert.strictEqual(payload.options.num_predict, 60);
 });
+
+test('think: false is sent so reasoning models skip their hidden thinking step', async () => {
+  let sent = null;
+  handler = (req, res, body) => { sent = JSON.parse(body); res.end(JSON.stringify({ message: { content: 'ok' } })); };
+  await ollama().chat({ model: 'm', messages: [], think: false });
+  assert.strictEqual(sent.think, false);
+  await ollama().chat({ model: 'm', messages: [] });
+  assert.ok(!('think' in sent), 'not sent unless asked for');
+});

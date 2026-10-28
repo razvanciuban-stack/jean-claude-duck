@@ -10,6 +10,7 @@ function defaultDescribe(prevJpeg, jpeg) {
   const images = prevJpeg ? [prevJpeg, jpeg] : [jpeg];
   return chat({
     model: VISION_MODEL,
+    think: false,
     messages: [{ role: 'user', content: DESCRIBE_PROMPT, images }],
     options: { num_predict: 60, num_ctx: LEARNING_NUM_CTX },
     timeoutMs: VISION_TIMEOUT_MS,

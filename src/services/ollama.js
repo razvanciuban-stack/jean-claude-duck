@@ -57,9 +57,11 @@ function extractContent(body) {
   }
 }
 
-async function chat({ model, messages, format, options, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+// think: false skips a reasoning model's hidden "thinking" step (much faster for short structured answers)
+async function chat({ model, messages, format, options, think, timeoutMs = DEFAULT_TIMEOUT_MS }) {
   const payload = { model, messages, stream: false };
   if (format) payload.format = format;
+  if (think !== undefined) payload.think = think;
   if (options) payload.options = options;
   const body = await request('POST', '/api/chat', payload, timeoutMs);
   return extractContent(body);

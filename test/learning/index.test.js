@@ -380,3 +380,21 @@ test('pipeline gets an isEnabled callback that follows the on/off state', () => 
   ctx.learning.disable();
   assert.strictEqual(args.isEnabled(), false);
 });
+
+test('screenshots are not described while she makes notes, and resume afterwards', async () => {
+  let release;
+  const ctx = setup({ deps: { createPipeline: () => ({
+    runIfIdle: async () => 'nothing',
+    runNow: () => new Promise((r) => { release = () => r('ran'); }),
+    status: () => ({}),
+  }) } });
+  ctx.learning.enable();
+  const h = ctx.helpers[0];
+  const shot = (id) => h.emit('event', { type: 'screenshot', id, jpegBase64: 'AAAA', bundleId: 'com.apple.finder', appName: 'Finder', window: 'Docs', url: null });
+  const run = ctx.learning.makeNotesNow();
+  shot('during');
+  release();
+  await run;
+  shot('after');
+  assert.deepStrictEqual(ctx.pushed.map((p) => p.id), ['after']);
+});

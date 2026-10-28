@@ -223,6 +223,7 @@ async function learnTask({ task, steps, lessons, vault, ask = chatJSON, today })
   if (candidates.length) {
     const res = await ask({
       model: TEXT_MODEL,
+      think: false,
       messages: [
         { role: 'system', content: MATCH_PROMPT },
         { role: 'user', content: payload({
@@ -260,6 +261,7 @@ async function learnTask({ task, steps, lessons, vault, ask = chatJSON, today })
 
   const res = await ask({
     model: TEXT_MODEL,
+    think: false,
     messages: [
       { role: 'system', content: MERGE_PROMPT },
       { role: 'user', content: payload({

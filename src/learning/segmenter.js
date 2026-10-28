@@ -72,6 +72,7 @@ async function groupTasks(segment, ask = chatJSON) {
       const win = segment.slice(i, i + MAX_STEPS_PER_CALL);
       const raw = await ask({
         model: TEXT_MODEL,
+        think: false,
         messages: [
           { role: 'system', content: GROUP_PROMPT },
           { role: 'user', content: listing(win) },

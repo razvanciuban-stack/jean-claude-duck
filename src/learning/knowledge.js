@@ -48,6 +48,7 @@ async function extractKnowledge({ steps, vault, ask = chatJSON, today }) {
   for (let i = 0; i < lines.length; i += MAX_STEPS_PER_CALL) {
     const res = await ask({
       model: TEXT_MODEL,
+      think: false,
       messages: [
         { role: 'system', content: KNOWLEDGE_PROMPT },
         { role: 'user', content: JSON.stringify({ steps: lines.slice(i, i + MAX_STEPS_PER_CALL) }) },
