@@ -119,7 +119,7 @@ function getDockY() {
   // Window is 170px tall, duck sprite is at bottom 120px of window
   // Place so duck's feet sit exactly on top of dock
   const dockTop = workArea.y + workArea.height;
-  return dockTop - 160; // 10px lower, feet on dock
+  return dockTop - 170; // whole window above the dock: Mysthi's paws reach the window's bottom edge
 }
 
 function pickWanderTarget() {
@@ -167,6 +167,7 @@ function startWalking() {
 
   wanderTarget = pickWanderTarget();
   wanderState = 'walking';
+  stuckFrames = 0;
 
   // Tell renderer we're walking
   if (petWindow && !petWindow.isDestroyed()) {
@@ -180,9 +181,34 @@ function startWalking() {
 }
 
 let isWrapping = false; // true while duck is off-screen doing a wrap
+let stuckFrames = 0;     // frames in a row where setPosition didn't move the window
+
+// Tell the renderer to sit down whenever a walk ends for any reason other than arriving
+function sendStop() {
+  if (petWindow && !petWindow.isDestroyed()) {
+    petWindow.webContents.send('pet:wander', { action: 'stop' });
+  }
+}
+
+// macOS may refuse to push a window further off-screen; returns true once we've been pinned for a while
+function isPinned(prevX) {
+  const [actualX] = petWindow.getPosition();
+  stuckFrames = actualX === prevX ? stuckFrames + 1 : 0;
+  return stuckFrames > 10;
+}
+
+function startWrap(direction) {
+  const { width: sW } = getScreenBounds();
+  isWrapping = true;
+  stuckFrames = 0;
+  wanderTarget._wrapDir = direction; // 1 = walking right, enters from the left
+  petWindow.setPosition(direction === 1 ? -180 - 40 : sW + 40, getDockY());
+  petWindow.webContents.send('pet:wander', { action: 'walk', direction: direction === 1 ? 'right' : 'left' });
+}
 
 function animateToTarget() {
   if (!petWindow || petWindow.isDestroyed() || !wanderTarget || wanderPaused || isDragging) {
+    if (wanderState === 'walking') sendStop();
     wanderState = 'idle';
     isWrapping = false;
     return;
@@ -202,7 +228,7 @@ function animateToTarget() {
 
     // Only consider "on screen" once the duck is fully visible (not just peeking)
     const fullyOnScreen = newX > 20 && newX < sW - windowW - 20;
-    if (fullyOnScreen) {
+    if (fullyOnScreen || isPinned(cx)) {
       // Wrapped! Now pick a real on-screen target to walk to
       isWrapping = false;
       const margin = 100;
@@ -243,25 +269,20 @@ function animateToTarget() {
   const direction = dx > 0 ? 1 : -1;
   let newX = Math.round(cx + direction * speed);
 
-  // Check if duck has fully walked off screen → start wrap
+  // Walked fully off an edge → reappear from the other side
   if (newX >= sW + 10) {
-    // Off right edge → appear from the left side
-    isWrapping = true;
-    wanderTarget._wrapDir = 1; // walking right, entering from left
-    petWindow.setPosition(-windowW - 40, dockY); // well off left edge
-    if (petWindow && !petWindow.isDestroyed()) {
-      petWindow.webContents.send('pet:wander', { action: 'walk', direction: 'right' });
-    }
+    startWrap(1);
   } else if (newX <= -windowW - 10) {
-    // Off left edge → appear from the right side
-    isWrapping = true;
-    wanderTarget._wrapDir = -1; // walking left, entering from right
-    petWindow.setPosition(sW + 40, dockY); // well off right edge
-    if (petWindow && !petWindow.isDestroyed()) {
-      petWindow.webContents.send('pet:wander', { action: 'walk', direction: 'left' });
-    }
+    startWrap(-1);
   } else {
     petWindow.setPosition(newX, dockY);
+    if (isPinned(cx)) {
+      // Pinned against an edge: wrap if that's where she was heading, otherwise call this spot the destination
+      stuckFrames = 0;
+      const nearEdge = direction === -1 ? cx < 60 : cx > sW - windowW - 60;
+      if (nearEdge) startWrap(direction);
+      else wanderTarget.x = cx;
+    }
   }
 
   // ~30fps movement
@@ -269,6 +290,7 @@ function animateToTarget() {
 }
 
 function stopWandering() {
+  if (wanderState === 'walking') sendStop();
   wanderState = 'stopped';
   wanderTarget = null;
   if (wanderTimer) {
