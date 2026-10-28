@@ -8,6 +8,7 @@ const store = new Store();
 const SIZE = 180;          // square window, so Mysthi can turn onto walls and the ceiling inside it
 const SPEED = 1.4;         // px per frame — a calm cat stroll; mysthi.js times her steps to this
 const FRAME_MS = 33;       // ~30 fps movement
+const FLOOR_NUDGE = 5;     // px lower on the floor, so her paws sit right on the dock edge
 // Where she walks: only along the bottom of the screen (floor-to-floor routes never turn up a wall)
 const EDGE_WEIGHTS = [['floor', 1]];
 
@@ -41,7 +42,7 @@ function send(channel, payload) {
 function placeAt(s) {
   const p = pointAt(bounds(), s, SIZE);
   loopS = s;
-  petWindow.setPosition(Math.round(p.x), Math.round(p.y));
+  petWindow.setPosition(Math.round(p.x), Math.round(p.y) + (p.edge === 'floor' ? FLOOR_NUDGE : 0));
   if (p.edge !== currentEdge) {
     currentEdge = p.edge;
     send('pet:edge', { edge: currentEdge });
@@ -60,7 +61,7 @@ function create() {
     width: SIZE,
     height: SIZE,
     x: Math.round(p.x),
-    y: Math.round(p.y),
+    y: Math.round(p.y) + (p.edge === 'floor' ? FLOOR_NUDGE : 0),
     frame: false,
     transparent: true,
     alwaysOnTop: true,
