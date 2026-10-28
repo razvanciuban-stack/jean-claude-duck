@@ -18,8 +18,8 @@ const SIT_POSE = `
     <g class="ear left"><path d="M58 70 L 64 22 L 94 50 Z" fill="#111" stroke="#111" stroke-width="8" stroke-linejoin="round"/></g>
     <g class="ear right"><path d="M106 50 L 136 22 L 142 70 Z" fill="#111" stroke="#111" stroke-width="8" stroke-linejoin="round"/></g>
     <ellipse cx="100" cy="80" rx="50" ry="40" fill="#111"/>
-    <g class="whiskers left"><path d="M62 92 L 26 84 M62 97 L 24 99 M63 102 L 30 112" stroke="#222" stroke-width="1.6" stroke-linecap="round"/></g>
-    <g class="whiskers right"><path d="M138 92 L 174 84 M138 97 L 176 99 M137 102 L 170 112" stroke="#222" stroke-width="1.6" stroke-linecap="round"/></g>
+    <g class="whiskers left"><path d="M62 92 L 26 84 M62 97 L 24 99 M63 102 L 30 112" stroke="#8a8a8a" stroke-width="1.6" stroke-linecap="round"/></g>
+    <g class="whiskers right"><path d="M138 92 L 174 84 M138 97 L 176 99 M137 102 L 170 112" stroke="#8a8a8a" stroke-width="1.6" stroke-linecap="round"/></g>
     <g class="eye" data-cx="80" data-cy="76"></g>
     <g class="eye" data-cx="120" data-cy="76"></g>
     <g class="mouth"></g>
@@ -34,7 +34,7 @@ const WALK_POSE = `
     <g class="walk-head">
       <path d="M140 92 L 142 56 L 162 76 Z M166 74 L 184 54 L 188 90 Z" fill="#111" stroke="#111" stroke-width="7" stroke-linejoin="round"/>
       <ellipse cx="164" cy="104" rx="30" ry="26" fill="#111"/>
-      <path d="M180 112 L 206 106 M180 116 L 208 118" stroke="#222" stroke-width="1.4" stroke-linecap="round"/>
+      <path d="M180 112 L 206 106 M180 116 L 208 118" stroke="#8a8a8a" stroke-width="1.4" stroke-linecap="round"/>
       <circle cx="160" cy="100" r="10.5" fill="#fff"/><circle cx="181" cy="99" r="9" fill="#fff"/>
       <circle cx="164" cy="100" r="4.2" fill="#111"/><circle cx="184.5" cy="99" r="3.8" fill="#111"/>
     </g>

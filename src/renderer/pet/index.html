@@ -4,7 +4,19 @@
   <meta charset="UTF-8">
   <style>
     * { margin: 0; padding: 0; }
-    html, body { overflow: hidden; background: transparent; width: 180px; height: 170px; position: relative; }
+    html, body { overflow: hidden; background: transparent; width: 180px; height: 180px; position: relative; }
+
+    /* Turns Mysthi onto the edge she is walking on: paws to the floor, a wall or the ceiling */
+    #stage { position: absolute; inset: 0; transform-origin: 50% 50%; transition: transform 0.35s ease; }
+
+    /* A faint light rim so her black silhouette still reads on dark wallpapers */
+    #slime-container svg {
+      filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.55)) drop-shadow(0 0 4px rgba(255, 255, 255, 0.22));
+    }
+
+    /* On the ceiling her paws are at the top of the window: show reactions underneath instead */
+    body[data-edge="ceiling"] #reaction-bubble { top: auto; bottom: 2px; }
+    body[data-edge="ceiling"] #reaction-bubble::after { bottom: auto; top: -4px; }
 
     #slime-container {
       width: 120px; height: 120px;
@@ -142,7 +154,7 @@
 </head>
 <body>
   <div id="reaction-bubble"></div>
-  <div id="slime-container"></div>
+  <div id="stage"><div id="slime-container"></div></div>
   <script src="mysthi.js"></script>
   <script>
     const { ipcRenderer } = require('electron');
@@ -310,7 +322,18 @@
       setTimeout(() => { container.className = ''; setAnimation(container, 'bounce'); }, ms);
     }
 
-    ipcRenderer.on('pet:wander', (event, { action, direction }) => {
+    // --- Which edge she is on: rotate the stage so her paws touch it ---
+    const stage = document.getElementById('stage');
+    const EDGE_ANGLE = { floor: 0, right: -90, ceiling: 180, left: 90 };
+    function setEdge(edge) {
+      if (!(edge in EDGE_ANGLE)) return;
+      document.body.dataset.edge = edge;
+      stage.style.transform = `rotate(${EDGE_ANGLE[edge]}deg)`;
+    }
+    ipcRenderer.on('pet:edge', (event, { edge }) => setEdge(edge));
+
+    ipcRenderer.on('pet:wander', (event, { action, direction, edge }) => {
+      if (edge) setEdge(edge);
       if (action === 'walk') {
         isWandering = true;
         container.className = '';

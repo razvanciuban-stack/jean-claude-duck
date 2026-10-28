@@ -1,8 +1,15 @@
 const { BrowserWindow, screen, ipcMain } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
+const { pointAt, nearestS, edgeRange, route, toLocal, spans } = require('./perimeter');
 
 const store = new Store();
+
+const SIZE = 180;          // square window, so Mysthi can turn onto walls and the ceiling inside it
+const SPEED = 1.4;         // px per frame — a calm cat stroll; mysthi.js times her steps to this
+const FRAME_MS = 33;       // ~30 fps movement
+// Where she likes to be: mostly on the floor, sometimes up a wall, now and then on the ceiling
+const EDGE_WEIGHTS = [['floor', 0.5], ['right', 0.2], ['left', 0.2], ['ceiling', 0.1]];
 
 let petWindow = null;
 let windowStartPos = null;
@@ -11,26 +18,48 @@ let eyeTrackInterval = null;
 let learningTogglePauseHandler = null;
 let learningIpcRegistered = false;
 
-// --- Wandering state ---
+// --- Wandering state: a position on the loop around the screen edge ---
 let wanderState = 'idle'; // 'idle' | 'walking' | 'paused' | 'stopped'
-let wanderTarget = null;
 let wanderTimer = null;
-let wanderPaused = false; // externally paused (e.g. chat open)
+let wanderPaused = false;  // externally paused
+let loopS = 0;             // distance along the loop (see perimeter.js)
+let walk = null;           // { dir, remaining } while walking
+let currentEdge = 'floor';
+
+// Work area of the display she is on (excludes the menu bar and the dock)
+function bounds() {
+  if (!petWindow || petWindow.isDestroyed()) return screen.getPrimaryDisplay().workArea;
+  const [x, y] = petWindow.getPosition();
+  return screen.getDisplayNearestPoint({ x: x + SIZE / 2, y: y + SIZE / 2 }).workArea;
+}
+
+function send(channel, payload) {
+  if (petWindow && !petWindow.isDestroyed()) petWindow.webContents.send(channel, payload);
+}
+
+// Put the window at loop distance s and turn her onto the right edge
+function placeAt(s) {
+  const p = pointAt(bounds(), s, SIZE);
+  loopS = s;
+  petWindow.setPosition(Math.round(p.x), Math.round(p.y));
+  if (p.edge !== currentEdge) {
+    currentEdge = p.edge;
+    send('pet:edge', { edge: currentEdge });
+  }
+}
 
 function create() {
-  const display = screen.getPrimaryDisplay();
-  const screenW = display.workArea.width;
-  const dockY = getDockY();
-  const savedPos = store.get('petPosition');
-  const x = Math.round(screenW / 2) - 90; // center of screen
-  const y = Math.round(display.workArea.height / 2); // middle of screen for testing
-  console.log('Pet window position:', { x, y, screenW, dockY });
+  const area = screen.getPrimaryDisplay().workArea;
+  const saved = store.get('petLoopS');
+  const start = Number.isFinite(saved) ? saved : spans(area, SIZE).W / 2; // middle of the floor
+  const p = pointAt(area, start, SIZE);
+  console.log('Pet window position:', { x: Math.round(p.x), y: Math.round(p.y), edge: p.edge });
 
   petWindow = new BrowserWindow({
-    width: 180,
-    height: 170,
-    x,
-    y,
+    width: SIZE,
+    height: SIZE,
+    x: Math.round(p.x),
+    y: Math.round(p.y),
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -43,8 +72,11 @@ function create() {
     },
   });
 
+  loopS = start;
+  currentEdge = p.edge;
   petWindow.setIgnoreMouseEvents(true, { forward: true });
   petWindow.loadFile(path.join(__dirname, '..', 'renderer', 'pet', 'index.html'));
+  petWindow.webContents.on('did-finish-load', () => send('pet:edge', { edge: currentEdge }));
 
   // Hit-test toggling
   ipcMain.on('slime:hit-test', (event, { hit }) => {
@@ -57,7 +89,7 @@ function create() {
   });
 
   // Drag handling
-  ipcMain.on('slime:drag-start', (event, { screenX, screenY }) => {
+  ipcMain.on('slime:drag-start', () => {
     if (!petWindow) return;
     isDragging = true;
     stopWandering();
@@ -75,11 +107,10 @@ function create() {
     if (!petWindow) return;
     isDragging = false;
     windowStartPos = null;
-    const [x] = petWindow.getPosition();
-    const dockY = getDockY();
-    petWindow.setPosition(x, dockY); // snap back to dock
-    store.set('petPosition', { x, y: dockY });
-    // Resume wandering after drag, wait a bit
+    // Land on whichever edge of that screen is closest to where she was dropped
+    const [x, y] = petWindow.getPosition();
+    placeAt(nearestS(bounds(), x, y, SIZE));
+    store.set('petLoopS', loopS);
     setTimeout(() => {
       if (!wanderPaused) scheduleNextWander();
     }, 3000);
@@ -105,54 +136,31 @@ function create() {
   return petWindow;
 }
 
-// ===== WANDERING SYSTEM =====
+// ===== WANDERING: around the screen edge, climbing walls and crossing the ceiling =====
 
-function getScreenBounds() {
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-  return { width, height };
-}
-
-function getDockY() {
-  const display = screen.getPrimaryDisplay();
-  const workArea = display.workArea;
-  // workArea.y + workArea.height = top of the dock
-  // Window is 170px tall, duck sprite is at bottom 120px of window
-  // Place so duck's feet sit exactly on top of dock
-  const dockTop = workArea.y + workArea.height;
-  return dockTop - 170; // whole window above the dock: Mysthi's paws reach the window's bottom edge
-}
-
-function pickWanderTarget() {
-  const { width } = getScreenBounds();
-  const [cx] = petWindow.getPosition();
-  const dockY = getDockY();
-
-  const windowW = 180;
-  // Sometimes pick a target beyond the screen edge so the duck wraps around
-  const willWrap = Math.random() < 0.3; // 30% chance to walk off-screen
-
-  let targetX;
-  if (willWrap) {
-    // Pick a target past the edge — duck will walk off and wrap
-    if (cx < width / 2) {
-      targetX = -windowW - 50; // walk off left
-    } else {
-      targetX = width + windowW + 50; // walk off right
-    }
-  } else {
-    // Normal: pick a random X on the dock
-    const margin = 20;
-    const maxX = width - 200;
-    do {
-      targetX = margin + Math.random() * (maxX - margin);
-    } while (Math.abs(targetX - cx) < 150);
+function pickEdge() {
+  let r = Math.random();
+  for (const [edge, weight] of EDGE_WEIGHTS) {
+    if ((r -= weight) <= 0) return edge;
   }
+  return 'floor';
+}
 
-  return { x: Math.round(targetX), y: dockY };
+// A spot somewhere along a weighted-random edge, not hugging a corner, and worth walking to
+function pickTarget(area) {
+  for (let tries = 0; tries < 20; tries++) {
+    const [start, end] = edgeRange(area, pickEdge(), SIZE);
+    const margin = Math.min(40, (end - start) / 4);
+    const target = start + margin + Math.random() * (end - start - 2 * margin);
+    const r = route(area, loopS, target, SIZE);
+    if (r.distance >= 120) return r;
+  }
+  return route(area, loopS, loopS + 200, SIZE);
 }
 
 function scheduleNextWander() {
   if (wanderPaused || isDragging) return;
+  if (wanderTimer) clearTimeout(wanderTimer);
 
   // Wait 4-12 seconds before next move
   const delay = 4000 + Math.random() * 8000;
@@ -164,135 +172,48 @@ function scheduleNextWander() {
 
 function startWalking() {
   if (!petWindow || petWindow.isDestroyed() || wanderPaused || isDragging) return;
-
-  wanderTarget = pickWanderTarget();
+  const { dir, distance } = pickTarget(bounds());
+  walk = { dir, remaining: distance };
   wanderState = 'walking';
-  stuckFrames = 0;
-
-  // Tell renderer we're walking
-  if (petWindow && !petWindow.isDestroyed()) {
-    // Determine direction for walk animation
-    const [cx, cy] = petWindow.getPosition();
-    const goingRight = wanderTarget.x > cx;
-    petWindow.webContents.send('pet:wander', { action: 'walk', direction: goingRight ? 'right' : 'left' });
-  }
-
-  animateToTarget();
+  // Counter-clockwise round the loop is always "forward to her right" in her own frame
+  send('pet:wander', { action: 'walk', direction: dir > 0 ? 'right' : 'left', edge: currentEdge });
+  step();
 }
-
-let isWrapping = false; // true while duck is off-screen doing a wrap
-let stuckFrames = 0;     // frames in a row where setPosition didn't move the window
 
 // Tell the renderer to sit down whenever a walk ends for any reason other than arriving
 function sendStop() {
-  if (petWindow && !petWindow.isDestroyed()) {
-    petWindow.webContents.send('pet:wander', { action: 'stop' });
-  }
+  send('pet:wander', { action: 'stop' });
 }
 
-// macOS may refuse to push a window further off-screen; returns true once we've been pinned for a while
-function isPinned(prevX) {
-  const [actualX] = petWindow.getPosition();
-  stuckFrames = actualX === prevX ? stuckFrames + 1 : 0;
-  return stuckFrames > 10;
-}
-
-function startWrap(direction) {
-  const { width: sW } = getScreenBounds();
-  isWrapping = true;
-  stuckFrames = 0;
-  wanderTarget._wrapDir = direction; // 1 = walking right, enters from the left
-  petWindow.setPosition(direction === 1 ? -180 - 40 : sW + 40, getDockY());
-  petWindow.webContents.send('pet:wander', { action: 'walk', direction: direction === 1 ? 'right' : 'left' });
-}
-
-function animateToTarget() {
-  if (!petWindow || petWindow.isDestroyed() || !wanderTarget || wanderPaused || isDragging) {
+function step() {
+  if (!petWindow || petWindow.isDestroyed() || !walk || wanderPaused || isDragging) {
     if (wanderState === 'walking') sendStop();
     wanderState = 'idle';
-    isWrapping = false;
+    walk = null;
     return;
   }
 
-  const [cx, cy] = petWindow.getPosition();
-  const dockY = getDockY();
-  const { width: sW } = getScreenBounds();
-  const windowW = 180;
+  const advance = Math.min(SPEED, walk.remaining);
+  placeAt(loopS + walk.dir * advance);
+  walk.remaining -= advance;
 
-  // If wrapping, just keep moving in same direction until we're well on screen
-  if (isWrapping) {
-    const speed = 1.4; // a calm cat stroll; mysthi.js times her steps to this
-    const direction = wanderTarget._wrapDir; // 1 = right, -1 = left
-    let newX = Math.round(cx + direction * speed);
-    petWindow.setPosition(newX, dockY);
-
-    // Only consider "on screen" once the duck is fully visible (not just peeking)
-    const fullyOnScreen = newX > 20 && newX < sW - windowW - 20;
-    if (fullyOnScreen || isPinned(cx)) {
-      // Wrapped! Now pick a real on-screen target to walk to
-      isWrapping = false;
-      const margin = 100;
-      wanderTarget = {
-        x: Math.round(margin + Math.random() * (sW - margin * 2)),
-        y: dockY,
-      };
-    }
-
-    setTimeout(() => animateToTarget(), 33);
-    return;
-  }
-
-  const dx = wanderTarget.x - cx;
-  const dist = Math.abs(dx);
-
-  if (dist < 5) {
-    // Arrived! Pause here on the dock
-    petWindow.setPosition(Math.round(wanderTarget.x), dockY);
-    store.set('petPosition', { x: Math.round(wanderTarget.x), y: dockY });
+  if (walk.remaining <= 0) {
+    walk = null;
     wanderState = 'paused';
-    wanderTarget = null;
-
-    // Tell renderer we stopped — do an arrival animation
+    store.set('petLoopS', loopS);
     const arrivalAnims = ['arrive-bounce', 'arrive-spin', 'arrive-settle', 'arrive-splits'];
-    const pick = arrivalAnims[Math.floor(Math.random() * arrivalAnims.length)];
-    if (petWindow && !petWindow.isDestroyed()) {
-      petWindow.webContents.send('pet:wander', { action: pick });
-    }
-
-    // Schedule next wander
+    send('pet:wander', { action: arrivalAnims[Math.floor(Math.random() * arrivalAnims.length)] });
     scheduleNextWander();
     return;
   }
 
-  // Move horizontally only along the dock
-  const speed = 1.4; // a calm cat stroll; mysthi.js times her steps to this
-  const direction = dx > 0 ? 1 : -1;
-  let newX = Math.round(cx + direction * speed);
-
-  // Walked fully off an edge → reappear from the other side
-  if (newX >= sW + 10) {
-    startWrap(1);
-  } else if (newX <= -windowW - 10) {
-    startWrap(-1);
-  } else {
-    petWindow.setPosition(newX, dockY);
-    if (isPinned(cx)) {
-      // Pinned against an edge: wrap if that's where she was heading, otherwise call this spot the destination
-      stuckFrames = 0;
-      const nearEdge = direction === -1 ? cx < 60 : cx > sW - windowW - 60;
-      if (nearEdge) startWrap(direction);
-      else wanderTarget.x = cx;
-    }
-  }
-
-  // ~30fps movement
-  setTimeout(() => animateToTarget(), 33);
+  setTimeout(step, FRAME_MS);
 }
 
 function stopWandering() {
   if (wanderState === 'walking') sendStop();
   wanderState = 'stopped';
-  wanderTarget = null;
+  walk = null;
   if (wanderTimer) {
     clearTimeout(wanderTimer);
     wanderTimer = null;
@@ -310,20 +231,18 @@ function startEyeTracking() {
     const cursor = screen.getCursorScreenPoint();
     const [wx, wy] = petWindow.getPosition();
 
-    const cx = wx + 90;  // center of 180px wide window
-    const cy = wy + 90;  // Mysthi's eyes in the 170px tall window (she sits at the bottom)
+    const cx = wx + SIZE / 2;  // her eyes sit near the middle of the square window on every edge
+    const cy = wy + SIZE / 2;
     const dx = cursor.x - cx;
     const dy = cursor.y - cy;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     if (dist < 30) {
-      petWindow.webContents.send('cursor:near', {});
+      send('cursor:near', {});
     } else {
-      petWindow.webContents.send('cursor:direction', {
-        dx: dx > 20 ? 1 : dx < -20 ? -1 : 0,
-        dy: dy > 20 ? 1 : dy < -20 ? -1 : 0,
-        dist,
-      });
+      // Turn the screen direction into her own frame, so she looks the right way on walls and the ceiling
+      const local = toLocal(currentEdge, dx > 20 ? 1 : dx < -20 ? -1 : 0, dy > 20 ? 1 : dy < -20 ? -1 : 0);
+      send('cursor:direction', { dx: local.dx, dy: local.dy, dist });
     }
   }, 50);
 }
@@ -331,9 +250,7 @@ function startEyeTracking() {
 function pauseFollowing() {
   wanderPaused = true;
   stopWandering();
-  if (petWindow && !petWindow.isDestroyed()) {
-    petWindow.webContents.send('pet:wander', { action: 'stop' });
-  }
+  sendStop();
 }
 
 function resumeFollowing() {
@@ -350,9 +267,7 @@ function getWindow() {
 }
 
 function sendState(stateData) {
-  if (petWindow && !petWindow.isDestroyed()) {
-    petWindow.webContents.send('pet:state', stateData);
-  }
+  send('pet:state', stateData);
 }
 
 module.exports = { create, getWindow, sendState, pauseFollowing, resumeFollowing, onLearningTogglePause };
