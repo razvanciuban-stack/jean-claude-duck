@@ -43,7 +43,9 @@ enum Screenshot {
         let displayID = displayOfFrontmostWindow()
         Task { @MainActor in
             do {
-                guard let shot = try await captureJPEG(displayID: displayID) else {
+                let shot = try await captureJPEG(displayID: displayID)
+                // A pause that arrived during the capture wins: the image is discarded, never emitted.
+                guard let shot, CaptureController.shared?.paused != true else {
                     emitFailure(id: id)
                     return
                 }

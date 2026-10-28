@@ -10,38 +10,49 @@ struct RawEvent: Sendable {
     let location: CGPoint
     let keyCode: Int64
     let flags: CGEventFlags
-    /// Characters produced by the key (only collected for non-cmd/ctrl key downs).
+}
+
+/// A key down plus the focus/secure state resolved synchronously inside the tap callback, so the
+/// later (deferred) processing never re-queries focus and can't attribute keys to the wrong field.
+struct KeySnapshot {
+    let raw: RawEvent
+    let focused: AXUIElement?
+    let secure: Bool
+    /// Characters produced by the key; always nil when `secure` (dropped inside the callback).
     let chars: String?
 }
 
-/// C callback for the listen-only session tap. Runs on the main run loop, so it hops onto
-/// the main actor synchronously and defers the AX work until after it returns.
+/// C callback for the listen-only session tap. Runs on the main run loop, so it hops onto the main
+/// actor synchronously; the controller snapshots focus/secure state before the callback returns.
 private func tapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
                          userInfo: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
-    let raw: RawEvent?
     switch type {
     case .leftMouseDown, .rightMouseDown:
-        raw = RawEvent(kind: .click, location: event.location, keyCode: 0, flags: event.flags, chars: nil)
-    case .keyDown:
-        let flags = event.flags
-        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-        var chars: String?
-        if !flags.contains(.maskCommand), !flags.contains(.maskControl) {
-            var length = 0
-            var buffer = [UniChar](repeating: 0, count: 8)
-            event.keyboardGetUnicodeString(maxStringLength: 8, actualStringLength: &length, unicodeString: &buffer)
-            chars = length > 0 ? String(utf16CodeUnits: buffer, count: length) : nil
-        }
-        raw = RawEvent(kind: .keyDown, location: .zero, keyCode: keyCode, flags: flags, chars: chars)
-    case .tapDisabledByTimeout, .tapDisabledByUserInput:
-        raw = RawEvent(kind: .tapDisabled, location: .zero, keyCode: 0, flags: [], chars: nil)
-    default:
-        raw = nil
-    }
-    if let raw {
+        let raw = RawEvent(kind: .click, location: event.location, keyCode: 0, flags: event.flags)
         MainActor.assumeIsolated { CaptureController.shared?.receive(raw) }
+    case .keyDown:
+        let raw = RawEvent(kind: .keyDown, location: .zero,
+                           keyCode: event.getIntegerValueField(.keyboardEventKeycode), flags: event.flags)
+        // The closure runs synchronously on this same (main) thread before the callback returns,
+        // so the event is never actually shared across threads.
+        nonisolated(unsafe) let keyEvent = event
+        MainActor.assumeIsolated {
+            CaptureController.shared?.receiveKey(raw) { readChars(keyEvent) }
+        }
+    case .tapDisabledByTimeout, .tapDisabledByUserInput:
+        let raw = RawEvent(kind: .tapDisabled, location: .zero, keyCode: 0, flags: [])
+        MainActor.assumeIsolated { CaptureController.shared?.receive(raw) }
+    default:
+        break
     }
     return Unmanaged.passUnretained(event)
+}
+
+private func readChars(_ event: CGEvent) -> String? {
+    var length = 0
+    var buffer = [UniChar](repeating: 0, count: 8)
+    event.keyboardGetUnicodeString(maxStringLength: 8, actualStringLength: &length, unicodeString: &buffer)
+    return length > 0 ? String(utf16CodeUnits: buffer, count: length) : nil
 }
 
 /// Global mouse/keyboard tap, typing aggregation, and frontmost app/window tracking.
@@ -63,7 +74,7 @@ final class CaptureController {
     /// Keystrokes aggregated for one focused field. For a secure field `text` stays empty forever.
     private struct TypingBuffer {
         let element: AXUIElement
-        let secure: Bool
+        var secure: Bool
         let isTerminal: Bool
         let ts: Int64
         let context: AppContext
@@ -118,24 +129,48 @@ final class CaptureController {
 
     // MARK: - Event intake
 
+    /// Pending work in arrival order; drained one item per main-queue hop.
+    private enum Pending { case click(CGPoint), key(KeySnapshot) }
+    private var pending: [Pending] = []
+
     func receive(_ raw: RawEvent) {
-        if raw.kind == .tapDisabled {
+        switch raw.kind {
+        case .tapDisabled:
             if !paused, let tap { CGEvent.tapEnable(tap: tap, enable: true) }
-            return
-        }
-        guard !paused else { return }
-        // Defer AX queries so the tap callback returns immediately; the main queue keeps FIFO order.
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated { self.process(raw) }
+        case .click:
+            guard !paused else { return }
+            enqueue(.click(raw.location))
+        case .keyDown:
+            break // keys arrive through receiveKey
         }
     }
 
-    private func process(_ raw: RawEvent) {
+    /// Called synchronously inside the tap callback. Resolves the focused element and its secure state
+    /// right now; characters are read only when the field is not secure.
+    func receiveKey(_ raw: RawEvent, readChars: () -> String?) {
         guard !paused else { return }
-        switch raw.kind {
-        case .click: handleClick(at: raw.location)
-        case .keyDown: handleKeyDown(raw)
-        case .tapDisabled: break
+        let focused = AXInspector.focusedElement()
+        let secure = IsSecureEventInputEnabled() || (focused.map(AXInspector.isSecure) ?? false)
+        let cmdOrCtrl = raw.flags.contains(.maskCommand) || raw.flags.contains(.maskControl)
+        let chars = (secure || cmdOrCtrl) ? nil : readChars()
+        enqueue(.key(KeySnapshot(raw: raw, focused: focused, secure: secure, chars: chars)))
+    }
+
+    private func enqueue(_ item: Pending) {
+        pending.append(item)
+        // Defer the heavier AX work so the callback returns quickly; one hop per item keeps FIFO order.
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { self.drainOne() }
+        }
+    }
+
+    private func drainOne() {
+        guard !pending.isEmpty else { return }
+        let item = pending.removeFirst()
+        guard !paused else { return }
+        switch item {
+        case .click(let point): handleClick(at: point)
+        case .key(let snapshot): handleKeyDown(snapshot)
         }
     }
 
@@ -149,16 +184,16 @@ final class CaptureController {
         Output.emit(line)
     }
 
-    private func handleKeyDown(_ raw: RawEvent) {
+    private func handleKeyDown(_ key: KeySnapshot) {
+        let raw = key.raw
         let cmd = raw.flags.contains(.maskCommand)
         let ctrl = raw.flags.contains(.maskControl)
         let alt = raw.flags.contains(.maskAlternate)
-        let printable = raw.chars.map(Self.isPrintable) ?? false
 
-        // ⌘/⌃ always make a shortcut. ⌥ alone makes a shortcut only when it produces no printable
-        // character: ⌥+letter types text (diacritics, symbols) and must go through the typing path so a
-        // secure field discards it instead of leaking it as "alt+<key>".
-        if cmd || ctrl || (alt && !printable) {
+        // ⌘/⌃ always make a shortcut (they never produce text). ⌥ alone makes a shortcut only for named
+        // non-text keys (arrows, F-keys, return, tab, delete, escape, home/end/page). Any other ⌥ key —
+        // including dead keys like ⌥e — is text, so it goes through typing, where a secure field drops it.
+        if cmd || ctrl || (alt && KeyNames.isSpecial(raw.keyCode)) {
             emitShortcut(raw)
             return
         }
@@ -168,27 +203,32 @@ final class CaptureController {
             return
         }
 
-        guard let field = AXInspector.focusedElement() else { return }
+        // Use only the focus snapshot taken in the tap callback; never re-query here.
+        guard let field = key.focused else { return }
         if let current = typing, !CFEqual(current.element, field) {
             flushTyping()
         }
         if typing == nil {
-            let secure = AXInspector.isSecure(field) || IsSecureEventInputEnabled()
             let (context, _) = AXInspector.frontmostContext()
             typing = TypingBuffer(
-                element: field, secure: secure,
+                element: field, secure: key.secure,
                 isTerminal: AXInspector.isTerminal(bundleId: context.bundleId, element: field),
                 ts: nowMs(), context: context, field: AXInspector.fieldInfo(field))
+        }
+        if key.secure, typing?.secure == false {
+            // The same field turned secure mid-buffer: forget everything typed into it.
+            typing?.secure = true
+            typing?.text = ""
         }
         typing?.keystrokes += 1
         if typing?.secure == false {
             if raw.keyCode == Self.keyDelete || raw.keyCode == Self.keyForwardDelete {
                 if typing?.text.isEmpty == false { typing?.text.removeLast() }
-            } else if printable, let chars = raw.chars {
+            } else if let chars = key.chars, Self.isPrintable(chars) {
                 typing?.text.append(chars)
             }
         }
-        // Secure field: the keystroke's characters are dropped here and never stored.
+        // Secure field: characters were never read (chars is nil) and nothing is stored.
         restartTypingTimer()
     }
 
@@ -280,6 +320,9 @@ enum KeyNames {
         122: "f1", 120: "f2", 99: "f3", 118: "f4", 96: "f5", 97: "f6", 98: "f7", 100: "f8",
         101: "f9", 109: "f10", 103: "f11", 111: "f12",
     ]
+
+    /// Named non-text keys; the only keys that make a ⌥-only shortcut.
+    static func isSpecial(_ keyCode: Int64) -> Bool { special[keyCode] != nil && keyCode != 49 }
 
     static func name(for keyCode: Int64) -> String {
         if let s = special[keyCode] { return s }

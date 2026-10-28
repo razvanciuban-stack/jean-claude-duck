@@ -40,8 +40,9 @@ enum AXInspector {
     }()
 
     private static var manualAXEnabledPids: Set<pid_t> = []
-    /// Cache of the located AXWebArea, keyed by pid + window title (a tab switch changes the title).
-    private static var webAreaCache: (pid: pid_t, title: String?, element: AXUIElement)?
+    /// Cache of the located AXWebArea. Only reused for the same window element and the same non-nil
+    /// title (a tab switch changes the title); anything else re-resolves.
+    private static var webAreaCache: (pid: pid_t, window: AXUIElement, title: String, element: AXUIElement)?
 
     // MARK: - Primitive accessors
 
@@ -192,12 +193,18 @@ enum AXInspector {
             AXUIElementSetAttributeValue(appElement, "AXManualAccessibility" as CFString, kCFBooleanTrue)
             manualAXEnabledPids.insert(pid)
         }
-        if let cache = webAreaCache, cache.pid == pid, cache.title == title,
-           let url = urlAttribute(cache.element) {
+        if let cache = webAreaCache, let title, cache.pid == pid, cache.title == title,
+           CFEqual(cache.window, window), let url = urlAttribute(cache.element) {
             return url
         }
+        webAreaCache = nil
         guard let webArea = findWebArea(in: window) else { return nil }
-        webAreaCache = (pid, title, webArea)
+        // Confirm the window/title didn't change while we searched; if unsure, report no URL.
+        let titleNow = string(window, kAXTitleAttribute as String)
+        guard let title, titleNow == title,
+              let focusedNow = element(appElement, kAXFocusedWindowAttribute as String),
+              CFEqual(focusedNow, window) else { return nil }
+        webAreaCache = (pid, window, title, webArea)
         return urlAttribute(webArea)
     }
 
