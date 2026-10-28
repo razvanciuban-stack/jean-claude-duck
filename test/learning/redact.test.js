@@ -31,3 +31,9 @@ test('redactDeep redacts nested strings and leaves numbers', () => {
   assert.deepStrictEqual(out, { a: 'ssh root@[IP]', n: 42, ok: true, nil: null, list: ['DB_PASSWORD=[PASSWORD]', 7, { deep: '[PHONE]' }] });
   assert.strictEqual(input.a, 'ssh root@192.168.1.20');
 });
+
+test('does not backtrack quadratically on long dashed input', () => {
+  const t0 = Date.now();
+  redact('a-'.repeat(20000));
+  assert.ok(Date.now() - t0 < 200, `took ${Date.now() - t0} ms`);
+});

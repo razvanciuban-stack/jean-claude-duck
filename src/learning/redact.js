@@ -4,6 +4,17 @@
 const PLACEHOLDER = /^\[[A-Z_]+\]$/u;
 const QUOTED_OR_WORD = '"[^"\\n]*"|\'[^\'\\n]*\'|\\S+';
 
+// Value text without its surrounding quotes
+function unquote(v) {
+  return /^(["']).*\1$/u.test(v) ? v.slice(1, -1) : v;
+}
+
+// Replacement value; JSON-style (quoted key) keeps the value's own quotes so the JSON stays well-formed
+function maskValue(keyQuote, value, mask) {
+  if (keyQuote && /^(["']).*\1$/u.test(value)) return `${value[0]}${mask}${value[0]}`;
+  return mask;
+}
+
 function luhnValid(digits) {
   let sum = 0;
   let double = false;
@@ -27,6 +38,8 @@ function shannonEntropy(s) {
   return h;
 }
 
+const BENIGN_ENV = new Set(['NODE_ENV', 'PATH', 'PORT', 'HOME', 'USER', 'SHELL', 'LANG', 'TERM', 'PWD', 'EDITOR', 'TZ', 'CI']);
+
 // Each rule: replace(match, ...groups) returns the new text, or undefined to leave the match alone.
 const RULES = [
   // PEM private key blocks (multi-line)
@@ -44,14 +57,29 @@ const RULES = [
   // user:pass@ credentials inside connection strings (scheme://user:pass@host)
   {
     kind: 'SECRET',
-    pattern: /\b([a-z][a-z0-9+.-]*:\/\/)[^\s:@/]*:[^\s@/]+@/giu,
+    pattern: /(?<![\w+.-])([a-z][a-z0-9+.-]{0,31}:\/\/)[^\s:@/]*:\S*@/giu, // greedy: up to the LAST @ (password may contain @ or /)
     replace: (m, scheme) => `${scheme}[SECRET]@`,
   },
-  // password-style key=value / key: value / "password is value" (value may be quoted)
+  // password-style key=value / key: value / "key":"value" / "password is value" (value may be quoted)
   {
     kind: 'PASSWORD',
-    pattern: new RegExp(`(pass(?:word|wd)?|pwd|parola)([\\w-]*)(\\s*[=:]\\s*|\\s+(?:is|este)\\s+)(${QUOTED_OR_WORD})`, 'giu'),
-    replace: (m, key, rest, sep, value) => (PLACEHOLDER.test(value) ? undefined : `${key}${rest}${sep}[PASSWORD]`),
+    pattern: new RegExp(`(pass(?:word|wd)?|pwd|parola)([\\w-]*)(["']?)(\\s*[=:]\\s*|\\s+(?:is|este)\\s+)(${QUOTED_OR_WORD})`, 'giu'),
+    replace: (m, key, rest, kq, sep, value) => {
+      if (key === 'PWD' && !rest && !kq) return undefined; // $PWD env var is benign (allowlisted)
+      if (PLACEHOLDER.test(unquote(value))) return undefined;
+      return `${key}${rest}${kq}${sep}${maskValue(kq, value, '[PASSWORD]')}`;
+    },
+  },
+  // CLI password flags: mysql -pSECRET, curl --password SECRET / --password=SECRET
+  {
+    kind: 'PASSWORD',
+    pattern: /\b((?:mysql|mysqldump|mariadb)\b[^\n]*?\s)-p(?=\S)(\S+)/giu,
+    replace: (m, head, value) => (PLACEHOLDER.test(value) ? undefined : `${head}-p[PASSWORD]`),
+  },
+  {
+    kind: 'PASSWORD',
+    pattern: /(--(?:password|passwd|pass|pwd))(=|\s+)(\S+)/giu,
+    replace: (m, flag, sep, value) => (PLACEHOLDER.test(unquote(value)) ? undefined : `${flag}${sep}[PASSWORD]`),
   },
   // OpenAI/Anthropic-style sk- keys, Stripe sk_live_, Slack xox tokens, Google AIza keys
   {
@@ -77,23 +105,29 @@ const RULES = [
     pattern: /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/gu,
     replace: () => '[API_KEY]',
   },
-  // Authorization: Bearer <token>
+  // Authorization schemes: Bearer / Basic / Token <credential> (Basic/Token need a digit or base64 char to skip plain English)
   {
     kind: 'API_KEY',
-    pattern: /\b(Bearer\s+)[A-Za-z0-9._~+/=-]{16,}/giu,
-    replace: (m, prefix) => `${prefix}[API_KEY]`,
+    pattern: /\b(Bearer|Basic|Token)(\s+)(?=[A-Za-z0-9._~+/=-]*[\d=+/.])[A-Za-z0-9._~+/=-]{8,}/giu,
+    replace: (m, scheme, ws) => `${scheme}${ws}[API_KEY]`,
   },
-  // .env-style NAME=value where NAME looks secret-bearing (token, secret, key, auth, credential)
+  // secret-bearing NAME=value / "name": "value" (token, secret, key, auth, credential), JSON keys included
   // Note: "token"/"secret" are deliberately [SECRET] here, not [PASSWORD].
   {
     kind: 'SECRET',
-    pattern: new RegExp(`\\b([\\w.-]*(?:secret|token|auth|credential|key))(\\s*[=:]\\s*)(${QUOTED_OR_WORD})`, 'giu'),
-    replace: (m, name, sep, value) => (PLACEHOLDER.test(value) ? undefined : `${name}${sep}[SECRET]`),
+    pattern: new RegExp(`(?<![\\w.-])([\\w.-]*(?:secret|token|auth|credential|key))(["']?)(\\s*[=:]\\s*)(${QUOTED_OR_WORD})`, 'giu'),
+    replace: (m, name, kq, sep, value) => (PLACEHOLDER.test(unquote(value)) ? undefined : `${name}${kq}${sep}${maskValue(kq, value, '[SECRET]')}`),
+  },
+  // Line-anchored .env lines: any UPPER_SNAKE=value is a secret unless the key is a benign allowlisted one
+  {
+    kind: 'SECRET',
+    pattern: new RegExp(`^([ \\t]*(?:export[ \\t]+)?)([A-Z][A-Z0-9_]*)(=)(${QUOTED_OR_WORD})`, 'gmu'),
+    replace: (m, head, name, eq, value) => (BENIGN_ENV.has(name) || PLACEHOLDER.test(unquote(value)) ? undefined : `${head}${name}${eq}[SECRET]`),
   },
   // IBAN (compact or space-grouped)
   {
     kind: 'IBAN',
-    pattern: /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?\b/gu,
+    pattern: /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?\b/giu,
     replace: () => '[IBAN]',
   },
   // Payment cards: 13-19 digits, optional space/dash grouping, Luhn-valid only
@@ -128,6 +162,12 @@ const RULES = [
     kind: 'PHONE',
     pattern: /(?<![\w.-])0\d{2,3}[ .-]?\d{3}[ .-]?\d{3,4}(?![\w-])/gu,
     replace: () => '[PHONE]',
+  },
+  // Long hex runs (SHA-256, hex keys, git SHAs) that mix letters and digits
+  {
+    kind: 'API_KEY',
+    pattern: /(?<![\w])[0-9a-f]{32,}(?![\w])/giu,
+    replace: (m) => (/\d/u.test(m) && /[a-f]/iu.test(m) ? '[API_KEY]' : undefined),
   },
   // Anything long, token-shaped and high-entropy is treated as a key
   {
