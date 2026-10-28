@@ -321,9 +321,16 @@
     // --- Wandering: side-on walk while the window strolls, sit down on arrival ---
     let isWandering = false;
 
-    function sitDown(anim, ms) {
+    // Off the floor she clings in her side-on pose; a cat can't sit on a wall
+    const onFloor = () => (document.body.dataset.edge || 'floor') === 'floor';
+    function rest() {
       isWandering = false;
-      setPose(svg, 'sit');
+      setPose(svg, onFloor() ? 'sit' : 'cling');
+    }
+
+    function sitDown(anim, ms) {
+      rest();
+      if (!onFloor()) return;
       container.className = '';
       container.classList.add(`anim-${anim}`);
       setTimeout(() => { container.className = ''; setAnimation(container, 'bounce'); }, ms);
@@ -336,6 +343,7 @@
       if (!(edge in EDGE_ANGLE)) return;
       document.body.dataset.edge = edge;
       stage.style.transform = `rotate(${EDGE_ANGLE[edge]}deg)`;
+      if (!isWandering) rest(); // e.g. dropped onto a wall after a drag
     }
     ipcRenderer.on('pet:edge', (event, { edge }) => setEdge(edge));
 
@@ -346,8 +354,7 @@
         container.className = '';
         setPose(svg, 'walk', direction === 'left' ? 'left' : 'right');
       } else if (action === 'stop') {
-        isWandering = false;
-        setPose(svg, 'sit');
+        rest();
         container.className = '';
         setAnimation(container, 'bounce');
       } else if (action === 'arrive-bounce') {

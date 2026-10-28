@@ -245,10 +245,12 @@ function createWalkCycle(walk) {
   };
 }
 
-// pose: 'sit' (front-on) or 'walk' (side-on, facing `direction`)
+// pose: 'sit' (front-on), 'walk' (side-on, facing `direction`, legs moving)
+// or 'cling' (side-on, paws still — how she rests on a wall or the ceiling; keeps her facing)
 function setPose(svg, pose, direction = 'right') {
-  svg.classList.toggle('walking', pose === 'walk');
-  svg.classList.toggle('facing-left', pose === 'walk' && direction === 'left');
+  svg.classList.toggle('walking', pose === 'walk' || pose === 'cling');
+  if (pose === 'walk') svg.classList.toggle('facing-left', direction === 'left');
+  if (pose === 'sit') svg.classList.remove('facing-left');
   if (pose === 'walk') svg._walk.start();
   else svg._walk.stop();
 }

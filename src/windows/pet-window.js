@@ -146,10 +146,10 @@ function pickEdge() {
   return 'floor';
 }
 
-// A spot somewhere along a weighted-random edge, not hugging a corner, and worth walking to
-function pickTarget(area) {
+// A spot somewhere along an edge (weighted-random unless given), not hugging a corner, and worth walking to
+function pickTarget(area, edge) {
   for (let tries = 0; tries < 20; tries++) {
-    const [start, end] = edgeRange(area, pickEdge(), SIZE);
+    const [start, end] = edgeRange(area, edge || pickEdge(), SIZE);
     const margin = Math.min(40, (end - start) / 4);
     const target = start + margin + Math.random() * (end - start - 2 * margin);
     const r = route(area, loopS, target, SIZE);
@@ -162,8 +162,8 @@ function scheduleNextWander() {
   if (wanderPaused || isDragging) return;
   if (wanderTimer) clearTimeout(wanderTimer);
 
-  // A cat mostly stays put: rest 30-90 seconds before the next stroll
-  const delay = 30000 + Math.random() * 60000;
+  // A cat mostly stays put on the floor (30-90 s); clinging to a wall or the ceiling she soon heads down (5-15 s)
+  const delay = currentEdge === 'floor' ? 30000 + Math.random() * 60000 : 5000 + Math.random() * 10000;
   wanderTimer = setTimeout(() => {
     if (wanderPaused || isDragging || !petWindow || petWindow.isDestroyed()) return;
     startWalking();
@@ -172,7 +172,8 @@ function scheduleNextWander() {
 
 function startWalking() {
   if (!petWindow || petWindow.isDestroyed() || wanderPaused || isDragging) return;
-  const { dir, distance } = pickTarget(bounds());
+  // Off the floor, the next stroll always brings her back down
+  const { dir, distance } = pickTarget(bounds(), currentEdge === 'floor' ? null : 'floor');
   walk = { dir, remaining: distance };
   wanderState = 'walking';
   // Counter-clockwise round the loop is always "forward to her right" in her own frame
