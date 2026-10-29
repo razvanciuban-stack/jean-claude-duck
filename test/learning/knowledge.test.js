@@ -22,9 +22,9 @@ test('knowledge dedupes facts and returns only new ones', async () => {
   const note = vault.read('knowledge/git-tools.md');
   assert.match(note, /^---\ntype: mysthi-knowledge\ntopic: "Git Tools"\n---/);
   assert.match(note, /- Uses git in Terminal \(first seen 2026-10-01\)/);
-  const ask2 = async () => ({ facts: [{ topic: 'git tools', fact: 'USES GIT IN TERMINAL' }, { topic: 'Git Tools', fact: 'Prefers rebase' }, { topic: '!!!', fact: 'Odd topic' }] });
+  const ask2 = async () => ({ facts: [{ topic: 'git tools', fact: 'USES GIT IN TERMINAL' }, { topic: 'Git Tools', fact: 'Prefers rebase' }, { topic: '!!!', fact: 'Odd topic noted' }] });
   const second = await extractKnowledge({ steps, vault, ask: ask2, today: '2026-10-02' });
-  assert.deepStrictEqual(second.map((f) => f.fact), ['Prefers rebase', 'Odd topic']);
+  assert.deepStrictEqual(second.map((f) => f.fact), ['Prefers rebase', 'Odd topic noted']);
   assert.match(vault.read('knowledge/git-tools.md'), /- Prefers rebase \(first seen 2026-10-02\)/);
   assert.ok(vault.exists('knowledge/general.md'));
   assert.strictEqual((vault.read('knowledge/git-tools.md').match(/^- /gm) || []).length, 2);
@@ -50,7 +50,7 @@ test('knowledge chunks long segments (<=120 steps per call), clips lines to 200 
   const ask = async (args) => {
     calls.push(args);
     const n = calls.length;
-    return { facts: [{ topic: 'Shell', fact: `Fact ${n}` }, { topic: 'Shell', fact: 'Shared fact' }] };
+    return { facts: [{ topic: 'Shell', fact: `Uses build tool number ${n}` }, { topic: 'Shell', fact: 'Shares one terminal profile' }] };
   };
   const out = await extractKnowledge({ steps: long, vault, ask, today: '2026-10-28' });
   const sizes = calls.map((c) => JSON.parse(c.messages[1].content).steps.length);
@@ -60,7 +60,7 @@ test('knowledge chunks long segments (<=120 steps per call), clips lines to 200 
     assert.strictEqual(c.options.num_ctx, LEARNING_NUM_CTX);
     for (const line of JSON.parse(c.messages[1].content).steps) assert.ok(line.length <= 200);
   }
-  assert.deepStrictEqual(out.map((f) => f.fact), ['Fact 1', 'Shared fact', 'Fact 2', 'Fact 3']);
+  assert.deepStrictEqual(out.map((f) => f.fact), ['Uses build tool number 1', 'Shares one terminal profile', 'Uses build tool number 2', 'Uses build tool number 3']);
   assert.strictEqual((vault.read('knowledge/shell.md').match(/^- /gm) || []).length, 4);
 });
 
@@ -68,7 +68,7 @@ test('knowledge: a failing chunk rejects and writes nothing', async () => {
   const vault = tmpVault();
   const long = Array.from({ length: 130 }, (_, i) => ({ id: `s${i}`, ts: i, bundleId: 'b', appName: 'A', action: 'click', target: { title: 't' }, redactions: [] }));
   let n = 0;
-  const ask = async () => (++n === 2 ? { nope: true } : { facts: [{ topic: 'X', fact: 'Y' }] });
+  const ask = async () => (++n === 2 ? { nope: true } : { facts: [{ topic: 'X', fact: 'Prefers dark mode' }] });
   await assert.rejects(extractKnowledge({ steps: long, vault, ask, today: 'd' }), /no facts array/);
   assert.deepStrictEqual(vault.list('knowledge'), []);
 });

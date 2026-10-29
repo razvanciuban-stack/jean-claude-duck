@@ -41,7 +41,7 @@ function fakeDeps(over = {}) {
 function make(ctx, deps, extra = {}) {
   return createPipeline({
     journal: ctx.journal, vault: ctx.vault, stateDir: ctx.dir, deps,
-    now: () => T0 + 60 * MIN, getIdleMs: () => 10 * MIN, ...extra,
+    now: () => T0 + 60 * MIN, getIdleMs: () => 10 * MIN, minLessonSteps: 1, ...extra,
   });
 }
 
@@ -98,7 +98,7 @@ test('resumes after restart without reprocessing', async () => {
   assert.strictEqual(await make(ctx, deps).runIfIdle(), 'ran');
   assert.strictEqual(calls.learn.length, 2);
   assert.strictEqual(ctx.journal.lastProcessed(), 'b');
-  const p2 = createPipeline({ journal: createJournal(ctx.dir), vault: ctx.vault, stateDir: ctx.dir, deps, now: () => T0 + 60 * MIN, getIdleMs: () => 10 * MIN });
+  const p2 = createPipeline({ journal: createJournal(ctx.dir), vault: ctx.vault, stateDir: ctx.dir, deps, now: () => T0 + 60 * MIN, getIdleMs: () => 10 * MIN, minLessonSteps: 1 });
   assert.strictEqual(await p2.runIfIdle(), 'nothing');
   assert.strictEqual(calls.learn.length, 2);
 });
@@ -136,6 +136,28 @@ test('runNow while a run is in progress reports busy', async () => {
   assert.strictEqual(await p.runNow(), 'busy');
   release();
   await first;
+});
+
+test('a stretch of only unnamed clicks is marked done without asking the model', async () => {
+  const ctx = setup();
+  ctx.journal.append({ id: 'u1', ts: T0, bundleId: 'b', appName: 'Claude', action: 'click', target: { role: 'AXScrollArea', title: null }, redactions: [] });
+  ctx.journal.append({ id: 'u2', ts: T0 + 1000, bundleId: 'b', appName: 'Claude', action: 'click', target: { role: 'AXGroup', title: '' }, redactions: [] });
+  const { deps, calls } = fakeDeps();
+  assert.strictEqual(await make(ctx, deps).runIfIdle(), 'ran');
+  assert.strictEqual(calls.group, 0);
+  assert.strictEqual(calls.know, 0);
+  assert.strictEqual(ctx.journal.lastProcessed(), 'u2');
+});
+
+test('tasks shorter than 3 meaningful steps do not become lessons', async () => {
+  const ctx = setup();
+  for (const id of ['a', 'b', 'c', 'd', 'e']) ctx.journal.append(step(id, T0 + id.charCodeAt(0) * 1000));
+  const { deps, calls } = fakeDeps({ groupTasks: async () => [
+    { name: 'Short', stepIds: ['a', 'b'], isTask: true },
+    { name: 'Long', stepIds: ['c', 'd', 'e'], isTask: true },
+  ] });
+  await make(ctx, deps, { minLessonSteps: 3 }).runIfIdle();
+  assert.deepStrictEqual(calls.learn.map((c) => c.task.name), ['Long']);
 });
 
 test('null grouping stops without advancing', async () => {

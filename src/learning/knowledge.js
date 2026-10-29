@@ -2,6 +2,7 @@
 const { redact } = require('./redact');
 const { chatJSON } = require('../services/ollama');
 const { TEXT_MODEL, LEARNING_TIMEOUT_MS, LEARNING_NUM_CTX } = require('./config');
+const { isUsefulFact } = require('./meaningful');
 
 // Same bounds as task grouping: a long segment is sent in windows, each step line clipped
 const MAX_STEPS_PER_CALL = 120;
@@ -9,10 +10,12 @@ const MAX_FIELD = 200;
 const { describeStep } = require('./lessons');
 
 const KNOWLEDGE_PROMPT = [
-  'You extract durable facts about the user\'s computer setup from observed steps.',
+  'You extract durable facts about the user and how they work, from observed steps.',
   'You receive JSON: {"steps": [string]}.',
-  'Only report facts about: tools they use, projects and paths, naming conventions, keyboard shortcuts, settings.',
-  'Ignore one-off content, personal data, secrets, and anything not clearly durable.',
+  'Only report facts about: what they use each tool for, their projects and where files live, how they name things, keyboard shortcuts they rely on, settings they prefer.',
+  'Write facts a colleague would find useful, e.g. "Exports Figma frames with cmd+shift+e" or "Keeps client designs in ~/Design/Clients".',
+  'Never report technical accessibility terms (role names like AXButton, AXScrollArea, "UI elements"), and never a fact that only names an app they opened.',
+  'Ignore one-off content, personal data, secrets, and anything not clearly durable. An empty list is a fine answer.',
   'Reply with JSON only: {"facts": [{"topic": "<short topic>", "fact": "<one sentence>"}]}',
 ].join('\n');
 
@@ -57,7 +60,7 @@ async function extractKnowledge({ steps, vault, ask = chatJSON, today }) {
       options: { num_ctx: LEARNING_NUM_CTX },
     });
     if (!res || !Array.isArray(res.facts)) throw new Error('Knowledge response has no facts array');
-    facts.push(...res.facts);
+    facts.push(...res.facts.filter(isUsefulFact));
   }
 
   const groups = new Map(); // slug -> { topic, md, known, fresh: [] }

@@ -8,6 +8,7 @@ const { extractKnowledge } = require('./knowledge');
 const { isAvailable } = require('../services/ollama');
 const { appendDailyLog } = require('./reports');
 const { IDLE_THRESHOLD_MS, SEGMENT_GAP_MS, TEXT_MODEL } = require('./config');
+const { isMeaningful, MIN_LESSON_STEPS } = require('./meaningful');
 
 const WEEKLY_FILE = 'weekly.json';
 const CONNECTION_CODES = new Set(['ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'ETIMEDOUT', 'EHOSTUNREACH', 'EAI_AGAIN', 'EPIPE']);
@@ -108,12 +109,19 @@ class Interrupted extends Error {
   }
 }
 
-function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, getIdleMs, isEnabled = () => true }) {
+function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, getIdleMs, isEnabled = () => true, minLessonSteps = MIN_LESSON_STEPS }) {
   const d = { ...REAL_DEPS, ...deps };
   const state = { lastRunAt: null, lastResult: null, pending: 0, running: false };
 
-  async function processSegment(segment, today, force) {
-    const lastId = segment[segment.length - 1].id;
+  async function processSegment(fullSegment, today, force) {
+    const lastId = fullSegment[fullSegment.length - 1].id;
+    // Only steps with real names teach anything; a stretch of unnamed clicks is done with, nothing to write
+    const segment = fullSegment.filter(isMeaningful);
+    if (!segment.length) {
+      journal.markProcessed(lastId);
+      clearProgress(stateDir);
+      return;
+    }
     let prog = readProgress(stateDir);
     if (!prog || prog.segmentLastStepId !== lastId) prog = { segmentLastStepId: lastId, learnedTaskKeys: [], results: [], facts: null, attempts: 0 };
 
@@ -131,7 +139,7 @@ function createPipeline({ journal, vault, stateDir, deps = {}, now = Date.now, g
       if (!task.isTask) continue;
       const ids = new Set(task.stepIds);
       const steps = segment.filter((s) => ids.has(s.id));
-      if (!steps.length) continue;
+      if (steps.length < minLessonSteps) continue; // too short to be a lesson
       const key = [...task.stepIds].sort().join(',');
       if (prog.learnedTaskKeys.includes(key)) continue;
       if (!isEnabled()) throw new Interrupted('disabled');
