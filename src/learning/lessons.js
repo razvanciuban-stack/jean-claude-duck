@@ -13,13 +13,19 @@ const MATCH_PROMPT = [
   'Reply with JSON only: {"slug": "<existing slug>" | null}',
 ].join('\n');
 
+// The model lists only what changes; the code applies it. Its answer grows with the number of changes,
+// not with the size of the lesson (rewriting a long lesson whole used to overflow the answer limit).
 const MERGE_PROMPT = [
   'You merge a newly observed run of a task into an existing lesson.',
   'You receive JSON: {"existing": [{"id", "text", "app", "action", "target", "value"?, "userEdited"}], "run": [{"text", "app", "action", "target", "value"?}]}.',
-  'Return the improved list of steps. Keep the "id" of every existing step you keep; steps you add must have no "id".',
-  'Drop existing steps that the new run shows are unnecessary. Do not rewrite steps with "userEdited": true; the user owns them.',
+  'Only list what changes. Steps that stay the same must not appear in your answer.',
+  '"remove": ids of existing steps that the new run shows are unnecessary.',
+  '"rewrite": existing steps whose text should be clearer, as {"id", "text"}.',
+  '"add": steps the run shows are missing, as {"after": <id of the step it follows, or null to put it first>, "text", "app", "action", "target", "value"?}.',
+  'Never remove or rewrite steps with "userEdited": true; the user owns them.',
   'Write each step "text" as one short imperative sentence. Never include passwords, tokens, or personal data.',
-  'Reply with JSON only: {"steps": [{"id"?, "text", "app", "action", "target", "value"?}], "changes": [string]} where "changes" briefly lists what you changed.',
+  'If nothing changes, reply with empty lists.',
+  'Reply with JSON only: {"remove": [id], "rewrite": [{"id", "text"}], "add": [{"after", "text", "app", "action", "target", "value"?}], "changes": [string]} where "changes" briefly lists what you changed.',
 ].join('\n');
 
 function clean(v) {
@@ -204,6 +210,52 @@ function mergeSteps(existing, modelSteps, tombTexts = []) {
   return result;
 }
 
+const isEditAnswer = (res) => !!res && ['remove', 'rewrite', 'add'].some((k) => Array.isArray(res[k]));
+
+// Apply the model's edits to the existing steps. Your edits win: user-edited steps are never removed,
+// a rewrite of one becomes a variant, and steps you removed (tombstones) are never added back.
+function applyEdits(existing, res, tombTexts = []) {
+  const byId = new Map(existing.map((s) => [s.id, s]));
+  const tomb = new Set(tombTexts);
+  const list = (k) => (Array.isArray(res[k]) ? res[k] : []);
+
+  const removed = new Set(list('remove').filter((id) => typeof id === 'string' && byId.has(id) && !byId.get(id).userEdited));
+  const rewrites = new Map();
+  for (const r of list('rewrite')) {
+    if (!r || typeof r !== 'object' || typeof r.id !== 'string' || !byId.has(r.id)) continue;
+    const text = safe(r.text);
+    if (text) rewrites.set(r.id, { r, text });
+  }
+
+  const additions = new Map(); // after-id ('' = first) -> [new steps]
+  for (const a of list('add')) {
+    if (!a || typeof a !== 'object') continue;
+    const text = safe(a.text);
+    if (!text || tomb.has(normText(text))) continue;
+    const after = typeof a.after === 'string' && byId.has(a.after) ? a.after : (a.after == null ? '' : null);
+    const key = after === null ? 'end' : after; // unknown anchor → at the end
+    if (!additions.has(key)) additions.set(key, []);
+    additions.get(key).push({ id: newId(), ...modelStepFields(a, null), text, userEdited: false, variants: [] });
+  }
+
+  const result = [...(additions.get('') || [])];
+  for (const old of existing) {
+    if (!removed.has(old.id)) {
+      const rw = rewrites.get(old.id);
+      if (!rw || rw.text === old.text) result.push(old);
+      else if (old.userEdited) {
+        const variants = [...(old.variants || [])];
+        if (!variants.includes(rw.text)) variants.push(rw.text);
+        result.push({ ...old, variants });
+      } else result.push({ ...old, ...modelStepFields(rw.r, old), text: rw.text, userEdited: false });
+    }
+    // added steps follow their anchor even when the anchor itself was removed
+    result.push(...(additions.get(old.id) || []));
+  }
+  result.push(...(additions.get('end') || []));
+  return result;
+}
+
 async function learnTask({ task, steps, lessons, vault, ask = chatJSON, today }) {
   const run = taskSteps(task, steps);
   const runApps = uniq(run.map((s) => s.bundleId || s.appName));
@@ -276,16 +328,23 @@ async function learnTask({ task, steps, lessons, vault, ask = chatJSON, today })
     timeoutMs: LEARNING_TIMEOUT_MS,
     options: { num_ctx: LEARNING_NUM_CTX, num_predict: LEARNING_MAX_TOKENS },
   });
-  if (!res || !Array.isArray(res.steps)) throw new Error('Merge response has no steps array');
+  const edits = isEditAnswer(res);
+  // A full step list is still accepted, in case the model answers in the old shape
+  if (!edits && !(res && Array.isArray(res.steps))) throw new Error('Merge response has neither edits nor a steps array');
   const changes = (Array.isArray(res.changes) ? res.changes : []).map(safe).filter(Boolean);
 
-  // R16: a response with no usable step text never wipes the lesson
-  const usable = res.steps.some((m) => m && typeof m === 'object' && safe(m.text));
+  // R16: an answer that would leave no steps never wipes the lesson
+  let merged;
+  if (edits) merged = applyEdits(existing.steps, res, existing.removedTexts);
+  else {
+    const usable = res.steps.some((m) => m && typeof m === 'object' && safe(m.text));
+    merged = usable ? mergeSteps(existing.steps, res.steps, existing.removedTexts) : [];
+  }
   const timesObserved = (existing.timesObserved || 0) + 1;
   const lesson = {
     ...existing,
     apps: uniq([...(existing.apps || []), ...runApps]),
-    steps: usable || !existing.steps.length ? mergeSteps(existing.steps, res.steps, existing.removedTexts) : existing.steps,
+    steps: merged.length || !existing.steps.length ? merged : existing.steps,
     timesObserved,
     confident: timesObserved >= CONFIDENT_AT,
     lastSeen: today,

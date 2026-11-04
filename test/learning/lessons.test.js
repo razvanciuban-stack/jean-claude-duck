@@ -279,3 +279,76 @@ test('match and merge calls set the learning timeout and num_ctx', async () => {
     assert.strictEqual(c.options.num_ctx, LEARNING_NUM_CTX);
   }
 });
+
+// --- Merge by edits: the model lists only what changes, so a big lesson can't overflow its answer ---
+
+async function bigLesson(vault, n) {
+  await learnNew(vault);
+  const rel = 'lessons/export-the-weekly-report.md';
+  const { lesson } = parseLesson(vault.read(rel));
+  const many = Array.from({ length: n }, (_, i) => ({ id: `b${i}`, app: 'com.apple.Safari', action: 'click', target: `T${i}`, text: `In Safari, click "Item ${i}"`, userEdited: false, variants: [] }));
+  vault.writeAtomic(rel, renderLesson({ ...lesson, slug: 'export-the-weekly-report', steps: many }));
+}
+
+test('the merge prompt asks for edits only, not the whole step list', () => {
+  const { MERGE_PROMPT } = require('../../src/learning/lessons');
+  assert.match(MERGE_PROMPT, /"remove"/);
+  assert.match(MERGE_PROMPT, /"rewrite"/);
+  assert.match(MERGE_PROMPT, /"add"/);
+  assert.match(MERGE_PROMPT, /Only list what changes/);
+});
+
+test('edits on a 300-step lesson: remove, rewrite, add after a step; the rest stays as it was', async () => {
+  const { vault } = tmpVault();
+  await bigLesson(vault, 300);
+  const ask = scripted([
+    { slug: 'export-the-weekly-report' },
+    { remove: ['b5', 'unknown-id'], rewrite: [{ id: 'b0', text: 'Open the Reports page' }], add: [{ after: 'b1', text: 'Press cmd+s', app: 'com.apple.Safari', action: 'shortcut', target: '' }, { after: null, text: 'Open Safari', app: 'com.apple.Safari', action: 'click', target: '' }], changes: ['Removed a step', 'Added save'] },
+  ]);
+  const res = await learnTask({ task, steps, lessons: loadLessons(vault), vault, ask, today: '2026-10-02' });
+  const texts = res.lesson.steps.map((s) => s.text);
+  assert.strictEqual(res.lesson.steps.length, 300 - 1 + 2);
+  assert.strictEqual(texts[0], 'Open Safari');
+  assert.strictEqual(texts[1], 'Open the Reports page');
+  assert.strictEqual(res.lesson.steps[1].id, 'b0');
+  assert.strictEqual(texts[3], 'Press cmd+s');
+  assert.ok(!res.lesson.steps.some((s) => s.id === 'b5'));
+  assert.strictEqual(texts.at(-1), 'In Safari, click "Item 299"');
+  assert.deepStrictEqual(res.changes, ['Removed a step', 'Added save']);
+});
+
+test('edits never remove or rewrite a step you edited, and never bring back one you removed', async () => {
+  const { vault } = tmpVault();
+  await learnNew(vault);
+  const rel = 'lessons/export-the-weekly-report.md';
+  const { lesson } = parseLesson(vault.read(rel));
+  lesson.steps[0] = { ...lesson.steps[0], userEdited: true, text: 'My own wording' };
+  vault.writeAtomic(rel, renderLesson({ ...lesson, slug: 'export-the-weekly-report', removedTexts: ['zombie step'] }));
+  const ask = scripted([
+    { slug: 'export-the-weekly-report' },
+    { remove: ['j1'], rewrite: [{ id: 'j1', text: 'Model wording' }], add: [{ after: 'j3', text: 'Zombie step', app: 'x', action: 'click', target: '' }], changes: [] },
+  ]);
+  const res = await learnTask({ task, steps, lessons: loadLessons(vault), vault, ask, today: '2026-10-02' });
+  const first = res.lesson.steps[0];
+  assert.strictEqual(first.id, 'j1');
+  assert.strictEqual(first.text, 'My own wording');
+  assert.ok(first.variants.includes('Model wording'));
+  assert.ok(!res.lesson.steps.some((s) => /zombie/i.test(s.text)));
+});
+
+test('edits that would remove every step keep the lesson', async () => {
+  const { vault } = tmpVault();
+  await learnNew(vault);
+  const ask = scripted([{ slug: 'export-the-weekly-report' }, { remove: ['j1', 'j2', 'j3'], rewrite: [], add: [], changes: [] }]);
+  const res = await learnTask({ task, steps, lessons: loadLessons(vault), vault, ask, today: '2026-10-02' });
+  assert.strictEqual(res.lesson.steps.length, 3);
+  assert.strictEqual(res.lesson.timesObserved, 2);
+});
+
+test('an empty edit list ("nothing changed") is a valid answer', async () => {
+  const { vault } = tmpVault();
+  await learnNew(vault);
+  const ask = scripted([{ slug: 'export-the-weekly-report' }, { remove: [], rewrite: [], add: [], changes: [] }]);
+  const res = await learnTask({ task, steps, lessons: loadLessons(vault), vault, ask, today: '2026-10-02' });
+  assert.deepStrictEqual(res.lesson.steps.map((s) => s.id), ['j1', 'j2', 'j3']);
+});
