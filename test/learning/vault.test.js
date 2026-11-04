@@ -66,3 +66,29 @@ test('paths escaping the vault root are rejected', () => {
   const vault = createVault(tmp());
   assert.throws(() => vault.writeAtomic('../evil.md', 'x'));
 });
+
+test('a symlink inside the vault may not lead outside it (read, write, exists, mtime)', () => {
+  const outside = tmp();
+  fs.writeFileSync(path.join(outside, 'secret.md'), 'outside the vault');
+  const root = tmp();
+  const vault = createVault(root);
+  vault.ensure();
+  fs.symlinkSync(path.join(outside, 'secret.md'), path.join(root, 'knowledge', 'link.md'));
+  fs.symlinkSync(outside, path.join(root, 'lessons', 'outdir'));
+  assert.throws(() => vault.read('knowledge/link.md'), /leaves vault/);
+  assert.throws(() => vault.writeAtomic('lessons/outdir/new.md', 'x'), /leaves vault/);
+  assert.strictEqual(vault.exists('knowledge/link.md'), false);
+  assert.strictEqual(vault.mtime('knowledge/link.md'), null);
+  assert.ok(!fs.existsSync(path.join(outside, 'new.md')));
+});
+
+test('a symlink that stays inside the vault is fine, and ../ is still refused', () => {
+  const root = tmp();
+  const vault = createVault(root);
+  vault.ensure();
+  vault.writeAtomic('knowledge/real.md', 'inside');
+  fs.symlinkSync(path.join(root, 'knowledge', 'real.md'), path.join(root, 'lessons', 'alias.md'));
+  assert.strictEqual(vault.read('lessons/alias.md'), 'inside');
+  assert.ok(typeof vault.mtime('knowledge/real.md') === 'number');
+  assert.throws(() => vault.read('../x.md'), /escapes vault/);
+});

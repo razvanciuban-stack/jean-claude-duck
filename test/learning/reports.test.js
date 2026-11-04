@@ -105,3 +105,28 @@ test('failed report write leaves state untouched', () => {
   assert.deepStrictEqual(readWeek(stateDir).newLessons, ['a']);
   assert.strictEqual(readWeek(stateDir).lastReportAt, null);
 });
+
+const { appendDailyLog } = require('../../src/learning/reports');
+
+test('a lesson updated many times in a day gets one line in the daily log', () => {
+  const { vault } = setup();
+  const date = '2026-11-04';
+  const upd = (change) => ({ kind: 'updated', lesson: { slug: 'export-icons', title: 'Export icons' }, changes: [change] });
+  appendDailyLog({ vault, date, lessons: [upd('added step: choose PNG'), upd('added step: pick @2x')] });
+  appendDailyLog({ vault, date, lessons: [upd('added a variant for Figma')] });
+  appendDailyLog({ vault, date, lessons: [upd('added a variant for Figma')] });
+  const log = vault.read(`log/${date}.md`);
+  const lines = log.split('\n').filter((l) => l.includes('export-icons'));
+  assert.strictEqual(lines.length, 1, log);
+  assert.match(lines[0], /updated 4 times; latest: added a variant for Figma/);
+});
+
+test('a lesson created today is not also listed as updated today', () => {
+  const { vault } = setup();
+  const date = '2026-11-04';
+  const lesson = { slug: 'publish', title: 'Publish' };
+  appendDailyLog({ vault, date, lessons: [{ kind: 'new', lesson }] });
+  appendDailyLog({ vault, date, lessons: [{ kind: 'updated', lesson, changes: ['added step'] }] });
+  const lines = vault.read(`log/${date}.md`).split('\n').filter((l) => l.includes('publish'));
+  assert.strictEqual(lines.length, 1);
+});

@@ -7,7 +7,8 @@ const { createTrayIcon } = require('./src/windows/tray-icon');
 const chatWindow = require('./src/windows/chat-window');
 const { createChat } = require('./src/services/chat');
 const { chatStream } = require('./src/services/ollama');
-const { getRelevantKnowledge } = require('./src/services/obsidian-brain');
+const { createVaultMemory } = require('./src/services/vault-memory');
+const { createVault } = require('./src/learning/vault');
 const systemInfo = require('./src/services/system-info');
 const activityMonitor = require('./src/services/activity-monitor');
 const { evaluate, getExpression } = require('./src/services/states');
@@ -181,7 +182,10 @@ function setupChat() {
   chat = createChat({
     store,
     stream: chatStream,
-    knowledgeFor: (text) => getRelevantKnowledge(text).replace(/^\s*Relevant knowledge from user's brain:\n/, ''),
+    knowledgeFor: (() => {
+      const memory = createVaultMemory({ vault: createVault(VAULT_DIR) });
+      return (text) => memory.search(text);
+    })(),
     // Her real status, so she never claims to be learning when she isn't
     learningStatus: () => (learning ? learning.statusLabel() : 'Learning: off'),
   });

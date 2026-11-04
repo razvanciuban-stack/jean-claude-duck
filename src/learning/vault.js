@@ -16,11 +16,28 @@ function seedDoNotWatch() {
 function createVault(rootDir = VAULT_DIR) {
   const root = path.resolve(rootDir);
 
+  const within = (base, p) => p === base || p.startsWith(base + path.sep);
+
+  // Real location on disk of p, or of its nearest existing parent (for files about to be written)
+  function realOf(p) {
+    let cur = p;
+    const rest = [];
+    for (;;) {
+      try { return path.join(fs.realpathSync(cur), ...rest); } catch (err) {
+        if (err.code !== 'ENOENT' && err.code !== 'ENOTDIR') throw err;
+        const parent = path.dirname(cur);
+        if (parent === cur) return p;
+        rest.unshift(path.basename(cur));
+        cur = parent;
+      }
+    }
+  }
+
+  // Lexical check first, then the real path: a symlink inside the vault may not lead outside it
   function resolve(relPath) {
     const full = path.resolve(root, relPath);
-    if (full !== root && !full.startsWith(root + path.sep)) {
-      throw new Error(`Path escapes vault: ${relPath}`);
-    }
+    if (!within(root, full)) throw new Error(`Path escapes vault: ${relPath}`);
+    if (!within(realOf(root), realOf(full))) throw new Error(`Path leaves vault through a link: ${relPath}`);
     return full;
   }
 
@@ -47,7 +64,12 @@ function createVault(rootDir = VAULT_DIR) {
   }
 
   function exists(relPath) {
-    return fs.existsSync(resolve(relPath));
+    try { return fs.existsSync(resolve(relPath)); } catch { return false; }
+  }
+
+  // Last-modified time in ms, or null if missing (or outside the vault)
+  function mtime(relPath) {
+    try { return fs.statSync(resolve(relPath)).mtimeMs; } catch { return null; }
   }
 
   function list(relDir) {
@@ -84,7 +106,7 @@ function createVault(rootDir = VAULT_DIR) {
     return out;
   }
 
-  return { ensure, writeAtomic, read, exists, list, loadDoNotWatch };
+  return { ensure, writeAtomic, read, exists, list, mtime, loadDoNotWatch };
 }
 
 module.exports = { createVault };

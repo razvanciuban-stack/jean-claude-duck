@@ -13,18 +13,45 @@ function link(lesson) {
   return `[[lessons/${lesson.slug}|${title}]]`;
 }
 
+// The first change, short enough to read at a glance
+function shortChange(changes) {
+  const first = (changes || []).map(oneLine).find(Boolean) || '';
+  return first.length > 100 ? `${first.slice(0, 99).trimEnd()}…` : first;
+}
+
+// One "Updated lessons" line per lesson: how many times today, and the latest change
+function updatedBullet(linkText, count, latest) {
+  if (count > 1) return `- ${linkText} — updated ${count} times${latest ? `; latest: ${latest}` : ''}`;
+  return `- ${linkText}${latest ? ` — ${latest}` : ''}`;
+}
+
+// The [[link]] a bullet is about, and how many updates it already counts
+const bulletKey = (line) => (/^- (\[\[[^\]]*\]\])/.exec(line) || [])[1] || null;
+const bulletCount = (line) => Number((/— updated (\d+) times/.exec(line) || [])[1] || 1);
+const bulletLatest = (line) => {
+  const m = /— updated \d+ times; latest: (.*)$/.exec(line) || / — (.*)$/.exec(line);
+  return m ? m[1] : '';
+};
+
 function buildBullets({ lessons = [], facts = [], notes = [] }) {
   const out = { 'New lessons': [], 'Updated lessons': [], 'New knowledge': [], Notes: [] };
   for (const n of notes) out.Notes.push(`- ${oneLine(n)}`);
+  const updates = new Map(); // link -> { count, latest }
+  const fresh = new Set();
   for (const r of lessons) {
     if (!r || !r.lesson) continue;
+    const l = link(r.lesson);
     if (r.kind === 'new') {
-      out['New lessons'].push(`- ${link(r.lesson)}`);
+      if (!fresh.has(l)) out['New lessons'].push(`- ${l}`);
+      fresh.add(l);
     } else {
-      const ch = (r.changes || []).map(oneLine).filter(Boolean).join('; ');
-      out['Updated lessons'].push(`- ${link(r.lesson)}${ch ? ` — ${ch}` : ''}`);
+      const u = updates.get(l) || { count: 0, latest: '' };
+      u.count += 1;
+      u.latest = shortChange(r.changes) || u.latest;
+      updates.set(l, u);
     }
   }
+  for (const [l, u] of updates) if (!fresh.has(l)) out['Updated lessons'].push(updatedBullet(l, u.count, u.latest));
   for (const f of facts) out['New knowledge'].push(`- ${oneLine(f.topic)}: ${oneLine(f.fact)}`);
   return out;
 }
@@ -62,7 +89,20 @@ function mergeIntoExisting(text, bullets) {
       if (/^#{1,2} /.test(lines[i])) { end = i; break; }
     }
     const present = new Set(lines.slice(heads[name] + 1, end));
-    const fresh = bullets[name].filter((b) => !present.has(b));
+    let fresh = bullets[name].filter((b) => !present.has(b));
+    if (name === 'Updated lessons') {
+      // Already new today → nothing to add; already updated today → fold into that one line
+      const newToday = new Set(lines.slice(heads['New lessons'] + 1, heads['Updated lessons']).map(bulletKey).filter(Boolean));
+      fresh = fresh.filter((b) => {
+        const key = bulletKey(b);
+        if (!key) return true;
+        if (newToday.has(key)) return false;
+        const at = lines.findIndex((l, i) => i > heads[name] && i < end && bulletKey(l) === key);
+        if (at < 0) return true;
+        lines[at] = updatedBullet(key, bulletCount(lines[at]) + bulletCount(b), bulletLatest(b) || bulletLatest(lines[at]));
+        return false;
+      });
+    }
     if (!fresh.length) continue;
     let at = end;
     while (at > heads[name] + 1 && lines[at - 1].trim() === '') at--;
