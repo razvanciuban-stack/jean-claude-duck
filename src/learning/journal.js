@@ -35,6 +35,9 @@ function createJournal(dir) {
   function append(step) {
     // Defense in depth: nothing reaches disk unredacted
     const safe = redactDeep(step);
+    // The id is made by the app from the clock, never from what the user typed, and can look like a
+    // secret (e.g. 'mw24kjt00002' matches the IBAN pattern): keep it, or every step would share '[IBAN]'
+    safe.id = step.id;
     safe.redactions = step.redactions || [];
     appendLine(path.join(dir, `steps-${dayStamp(Date.now())}.jsonl`), safe);
   }

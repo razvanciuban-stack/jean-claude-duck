@@ -76,3 +76,15 @@ test('markProcessed leaves no tmp file behind', () => {
   j.markProcessed('a1');
   assert.deepStrictEqual(fs.readdirSync(dir), ['state.json']);
 });
+
+test('step ids are never redacted, even when they look like a secret', () => {
+  const dir = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'mysthi-jid-'));
+  const journal = require('../../src/learning/journal').createJournal(dir);
+  // A real id from 2026-11-04: two letters, two digits, then alphanumerics — the IBAN shape
+  journal.append({ id: 'mw24kjt00002', ts: 1, action: 'click', target: { title: 'Export' }, redactions: [] });
+  journal.append({ id: 'mw24kjt00003', ts: 2, action: 'type', value: 'RO49AAAA1B31007593840000', redactions: [] });
+  const steps = journal.readSince(null);
+  assert.deepStrictEqual(steps.map((s) => s.id), ['mw24kjt00002', 'mw24kjt00003']);
+  assert.strictEqual(steps[1].value, '[IBAN]', 'real secrets are still scrubbed');
+  assert.deepStrictEqual(journal.readSince('mw24kjt00002').map((s) => s.id), ['mw24kjt00003']);
+});

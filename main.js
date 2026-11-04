@@ -112,7 +112,7 @@ function showMissingPermissions(missing) {
     type: 'warning',
     title: 'Mysthi needs permissions',
     message: `Mysthi needs ${names} to learn how you work.`,
-    detail: 'Open System Settings, turn Jean Claude Duck (or mysthi-helper) on for each missing permission, then come back. Mysthi will pick it up automatically.',
+    detail: 'Open System Settings, turn Mysthi (or mysthi-helper) on for each missing permission, then come back. Mysthi will pick it up automatically.',
     buttons: [...missing.map((m) => `Open ${m.name}`), 'Later'],
     cancelId: missing.length,
     defaultId: 0,
@@ -211,7 +211,7 @@ function appMenuTemplate() {
     { type: 'separator' },
     ...learningMenuItems(),
     { label: 'About', click: () => {
-      dialog.showMessageBox({ title: 'Jean Claude Duck', message: 'Jean Claude Duck v0.1.0\nA pixel-art desktop pet.' });
+      dialog.showMessageBox({ title: 'Mysthi', message: `Mysthi v${app.getVersion()}`, detail: 'A black cat who lives on your desktop and quietly learns how you work.', icon: path.join(__dirname, 'assets', 'icon.png') });
     }},
     { label: 'Quit', click: () => app.quit() },
   ];

@@ -1,6 +1,6 @@
 # Mysthi learning: setup and daily use
 
-Mysthi is the learning side of Jean Claude Duck. While you work, it watches which steps you repeat, and when you have done the same task a few times it writes a short lesson into your Obsidian vault.
+Mysthi is a black cat who lives on your desktop and learns how you work. While you work, it watches which steps you repeat, and when you have done the same task a few times it writes a short lesson into your Obsidian vault.
 
 ## What it does and doesn't do
 
@@ -17,7 +17,7 @@ These are built into how Mysthi works:
 - In Terminal, iTerm2 and Warp, and in any field the helper identifies as a terminal, typed text is recorded only when the terminal echoes it on its last visible line, and never when that line contains a password-prompt word (`password`, `sudo`, `token`, `secret`, `API key`, ...).
 - In code editors (VS Code, VS Code Insiders, Cursor, VSCodium, Zed), typed text is recorded only from a field macOS Accessibility reports as a text field or text area with a name or description that does not mention "terminal". Anything Mysthi can't classify, including an integrated terminal it can't recognise, is dropped. An integrated terminal it does recognise follows the terminal rule above.
 - A screenshot is described only if the app (and, for a browser, the site) that is in front at the moment of capture may be watched; otherwise it is thrown away unread. Typing that is cut off by switching apps or windows gets no screenshot.
-- Jean Claude Duck's own windows are never recorded or captured.
+- Mysthi's own windows are never recorded or captured.
 - Nothing is captured while learning is paused or off.
 
 Limits: other apps with built-in terminals (for example JetBrains IDEs or Hyper) are not covered by the terminal rule; add them to `do-not-watch.md`. A screenshot shows the whole display, so a do-not-watch window that is visible next to the app in front can still appear in it.
@@ -73,15 +73,15 @@ macOS ties the Screen Recording, Accessibility and Input Monitoring permissions 
   3. Name: `Mysthi Local Signing`. Identity Type: Self Signed Root. Certificate Type: Code Signing.
   4. Create, then Done.
   5. Verify: `security find-identity -v -p codesigning` lists `Mysthi Local Signing`.
-- [ ] **d. Build:** `npm run build`. If electron-builder fails with a signing error about the identity, step (c) was not done. This builds the helper and then the app. Result: `dist/mac-arm64/Jean Claude Duck.app`. Optional check: `codesign -dv --verbose=2 "dist/mac-arm64/Jean Claude Duck.app/Contents/Resources/mysthi-helper"` shows `Authority=Mysthi Local Signing`.
-- [ ] **e. Launch and grant permissions:** open `dist/mac-arm64/Jean Claude Duck.app`. From the tray icon choose **Start learning**. Mysthi asks for **Screen Recording**, **Accessibility** and **Input Monitoring**; use the "Open ..." buttons in its dialog to jump to System Settings, switch Jean Claude Duck (or mysthi-helper) on for each, then return. Mysthi notices the change on its own.
+- [ ] **d. Build:** `npm run build`. If electron-builder fails with a signing error about the identity, step (c) was not done. This builds the helper and then the app. Result: `dist/mac-arm64/Mysthi.app`. Optional check: `codesign -dv --verbose=2 "dist/mac-arm64/Mysthi.app/Contents/Resources/mysthi-helper"` shows `Authority=Mysthi Local Signing`.
+- [ ] **e. Launch and grant permissions:** open `dist/mac-arm64/Mysthi.app`. From the tray icon choose **Start learning**. Mysthi asks for **Screen Recording**, **Accessibility** and **Input Monitoring**; use the "Open ..." buttons in its dialog to jump to System Settings, switch Mysthi (or mysthi-helper) on for each, then return. Mysthi notices the change on its own.
 
-macOS may ask for Automation access ("System Events") the first time; that is the duck checking which app is in front.
+macOS may ask for Automation access ("System Events") the first time; that is Mysthi checking which app is in front.
 
 ## Daily use
 
 - **Pause / resume:** press **⌘⇧M**, or **⌥-click** the pet, or use Pause learning in the tray menu.
-- **Closed eyes** on the duck mean learning is on but not watching right now: paused, a permission is missing, or you are in an app/site on the block list. When the model is unavailable the eyes stay open: steps are still recorded and are learned once the model is back (the tray says `Learning: model unavailable`).
+- **Closed eyes** on Mysthi mean learning is on but not watching right now: paused, a permission is missing, or you are in an app/site on the block list. When the model is unavailable the eyes stay open: steps are still recorded and are learned once the model is back (the tray says `Learning: model unavailable`).
 - **Tray status line** (first item, greyed out):
   - `Learning: watching` - all good.
   - `Learning: paused` - you paused it.
@@ -108,6 +108,6 @@ macOS may ask for Automation access ("System Events") the first time; that is th
 ## Troubleshooting
 
 - **`Learning: model unavailable`:** start Ollama (open the Ollama app or run `ollama serve`) and check `ollama list` shows `qwen3-vl:8b`; if not, `ollama pull qwen3-vl:8b`.
-- **`Learning: missing permissions`:** System Settings, Privacy & Security. Turn Jean Claude Duck (or mysthi-helper) on under Screen Recording, Accessibility and Input Monitoring. If the "Mysthi Local Signing" certificate was recreated or renamed, macOS treats the app as new and asks for permissions again; grant them again.
-- **"Mysthi's watcher couldn't start":** the helper is missing or crashed, and learning turns itself off. Run `npm run build:helper` (if it fails, redo step a), or rebuild with `npm run build`, then choose Start learning again. In the packaged app the helper lives at `Jean Claude Duck.app/Contents/Resources/mysthi-helper`.
+- **`Learning: missing permissions`:** System Settings, Privacy & Security. Turn Mysthi (or mysthi-helper) on under Screen Recording, Accessibility and Input Monitoring. If the "Mysthi Local Signing" certificate was recreated or renamed, macOS treats the app as new and asks for permissions again; grant them again.
+- **"Mysthi's watcher couldn't start":** the helper is missing or crashed, and learning turns itself off. Run `npm run build:helper` (if it fails, redo step a), or rebuild with `npm run build`, then choose Start learning again. In the packaged app the helper lives at `Mysthi.app/Contents/Resources/mysthi-helper`.
 - **Reset everything Mysthi has stored locally:** quit the app and delete `~/Library/Application Support/jean-claude-duck/learning`. Your notes in `~/ObsidianVault/mysthi/` are not touched; delete those yourself if you want them gone.
