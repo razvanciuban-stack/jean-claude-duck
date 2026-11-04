@@ -398,3 +398,26 @@ test('screenshots are not described while she makes notes, and resume afterwards
   shot('after');
   assert.deepStrictEqual(ctx.pushed.map((p) => p.id), ['after']);
 });
+
+test('chat comes first: no screenshot descriptions during a reply, no note-making soon after', async () => {
+  let now = T0;
+  let release;
+  const ctx = setup({ deps: { now: () => now, getIdleMs: () => 10 * 60000 } });
+  ctx.learning.enable();
+  const h = ctx.helpers[0];
+  const shot = (id) => h.emit('event', { type: 'screenshot', id, jpegBase64: 'AAAA', bundleId: 'com.apple.finder', appName: 'Finder', window: 'Docs', url: null });
+  const reply = ctx.learning.forChat(() => new Promise((r) => { release = r; }));
+  shot('during-chat');
+  await ctx.learning.tick();
+  assert.strictEqual(ctx.pipelineCalls.run, 0, 'no note-making while she is answering');
+  release('Miaw');
+  assert.strictEqual(await reply, 'Miaw');
+  shot('after-chat');
+  now += 60000;
+  await ctx.learning.tick();
+  assert.strictEqual(ctx.pipelineCalls.run, 0, 'still quiet a minute after the chat');
+  now += 120000;
+  await ctx.learning.tick();
+  assert.strictEqual(ctx.pipelineCalls.run, 1, 'notes resume once the chat has been quiet');
+  assert.deepStrictEqual(ctx.pushed.map((p) => p.id), ['after-chat']);
+});

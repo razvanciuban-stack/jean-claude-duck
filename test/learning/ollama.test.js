@@ -81,3 +81,24 @@ test('an Ollama error reply becomes an error with its reason, not an empty answe
     (err) => err.status === 500 && /model ran out of memory/.test(err.message),
   );
 });
+
+test('chatStream hands over each piece as it arrives and resolves with the whole reply', async () => {
+  let sent = null;
+  handler = (req, res, body) => {
+    sent = JSON.parse(body);
+    res.write(JSON.stringify({ message: { content: 'Mi' } }) + '\n');
+    res.write(JSON.stringify({ message: { content: 'aw' } }) + '\n' + JSON.stringify({ message: { content: '!' } }));
+    res.end('\n' + JSON.stringify({ done: true }) + '\n');
+  };
+  const pieces = [];
+  const full = await ollama().chatStream({ model: 'm', messages: [], think: false, onToken: (t) => pieces.push(t) });
+  assert.strictEqual(full, 'Miaw!');
+  assert.deepStrictEqual(pieces, ['Mi', 'aw', '!']);
+  assert.strictEqual(sent.stream, true);
+  assert.strictEqual(sent.think, false);
+});
+
+test('chatStream rejects with Ollama\'s reason on an error reply', async () => {
+  handler = (req, res) => { res.statusCode = 404; res.end(JSON.stringify({ error: "model 'x' not found" })); };
+  await assert.rejects(ollama().chatStream({ model: 'x', messages: [] }), /not found/);
+});

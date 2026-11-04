@@ -332,6 +332,7 @@ function createLearning({
       reloadPolicy();
       await checkModel();
       if (!pipeline) return;
+      if (chatting()) return; // you're talking to her: the model is yours, notes can wait
       if (d.getIdleMs() >= IDLE_THRESHOLD_MS) await withVisionPaused(() => pipeline.runIfIdle());
       else await pipeline.runIfIdle(); // returns straight away when not idle
       if (!enabled) return;
@@ -341,6 +342,26 @@ function createLearning({
       console.error('learning: tick failed');
     } finally {
       ticking = false;
+    }
+  }
+
+  // Chat comes first: the one local model answers one request at a time, so while a reply is being
+  // written screenshot descriptions pause, and no note-making run starts until a while after the last message
+  const CHAT_QUIET_MS = 120000;
+  let chatReplies = 0;
+  let lastChatAt = -Infinity;
+  const chatting = () => chatReplies > 0 || d.now() - lastChatAt < CHAT_QUIET_MS;
+  async function forChat(fn) {
+    chatReplies++;
+    lastChatAt = d.now();
+    const hadVision = !!vision;
+    stopVision();
+    try {
+      return await fn();
+    } finally {
+      chatReplies--;
+      lastChatAt = d.now();
+      if (chatReplies === 0 && hadVision && enabled && !paused && pipeline && !vision) startVision();
     }
   }
 
@@ -374,6 +395,7 @@ function createLearning({
     disable,
     togglePause,
     makeNotesNow,
+    forChat,
     isMakingNotes: () => makingNotes,
     tick,
     shutdown,

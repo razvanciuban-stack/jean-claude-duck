@@ -1,4 +1,4 @@
-// ollama.js — shared local Ollama client (chat, JSON chat, availability check)
+// ollama.js — shared local Ollama client (chat, JSON chat, streamed chat, availability check)
 const http = require('http');
 
 const DEFAULT_URL = 'http://127.0.0.1:11434';
@@ -97,4 +97,50 @@ async function isAvailable(model) {
   }
 }
 
-module.exports = { chat, chatJSON, isAvailable, OllamaJSONError };
+// Streams a chat reply: onToken(text) for each piece as it arrives; resolves with the whole reply.
+// timeoutMs is the longest silence allowed between pieces, not the whole reply.
+function chatStream({ model, messages, options, think, onToken = () => {}, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+  return new Promise((resolve, reject) => {
+    const url = new URL('/api/chat', baseUrl());
+    const payload = { model, messages, stream: true };
+    if (options) payload.options = options;
+    if (think !== undefined) payload.think = think;
+    let full = '';
+    let pending = '';
+    const req = http.request({
+      hostname: url.hostname, port: url.port, path: url.pathname, method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, timeout: timeoutMs,
+    }, (res) => {
+      if (res.statusCode >= 400) {
+        let body = '';
+        res.on('data', (c) => { body += c; });
+        res.on('end', () => {
+          let reason = '';
+          try { reason = JSON.parse(body).error || ''; } catch { reason = body.slice(0, 200); }
+          reject(Object.assign(new Error(`Ollama HTTP ${res.statusCode}: ${reason}`), { status: res.statusCode }));
+        });
+        return;
+      }
+      const take = (line) => {
+        if (!line.trim()) return;
+        let obj;
+        try { obj = JSON.parse(line); } catch { return; }
+        if (obj.error) { req.destroy(); reject(new Error(`Ollama: ${obj.error}`)); return; }
+        const piece = obj.message && obj.message.content;
+        if (piece) { full += piece; onToken(piece); }
+      };
+      res.on('data', (chunk) => {
+        pending += chunk;
+        const lines = pending.split('\n');
+        pending = lines.pop();
+        lines.forEach(take);
+      });
+      res.on('end', () => { take(pending); resolve(full); });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Ollama timeout')); });
+    req.end(JSON.stringify(payload));
+  });
+}
+
+module.exports = { chat, chatJSON, chatStream, isAvailable, OllamaJSONError };

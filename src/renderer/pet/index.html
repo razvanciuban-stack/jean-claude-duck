@@ -254,6 +254,9 @@
       ipcRenderer.send('slime:hit-test', { hit: !!hit });
     });
 
+    // --- Double-click: open the chat window ---
+    container.addEventListener('dblclick', () => ipcRenderer.send('pet:open-chat'));
+
     // --- Right-click: app menu (learning on/off, pause, show/hide, quit) ---
     document.addEventListener('contextmenu', (e) => {
       e.preventDefault();

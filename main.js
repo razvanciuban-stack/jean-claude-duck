@@ -1,10 +1,13 @@
-const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, nativeImage, safeStorage, Notification, dialog, shell, powerMonitor } = require('electron');
+const { app, Tray, Menu, globalShortcut, ipcMain, Notification, dialog, shell, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
 const petWindowManager = require('./src/windows/pet-window');
 const { createTrayIcon } = require('./src/windows/tray-icon');
-const claude = require('./src/services/claude');
+const chatWindow = require('./src/windows/chat-window');
+const { createChat } = require('./src/services/chat');
+const { chatStream } = require('./src/services/ollama');
+const { getRelevantKnowledge } = require('./src/services/obsidian-brain');
 const systemInfo = require('./src/services/system-info');
 const activityMonitor = require('./src/services/activity-monitor');
 const { evaluate, getExpression } = require('./src/services/states');
@@ -17,36 +20,6 @@ const store = new Store();
 let tray = null;
 let isTalking = false;
 let hasError = false;
-let setupWindow = null;
-
-// --- API Key helpers ---
-function getApiKey() {
-  const encrypted = store.get('apiKey');
-  if (!encrypted) return null;
-  try {
-    return safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
-  } catch {
-    return null;
-  }
-}
-
-function saveApiKey(key) {
-  const encrypted = safeStorage.encryptString(key).toString('base64');
-  store.set('apiKey', encrypted);
-}
-
-// --- Setup window ---
-function showSetup() {
-  setupWindow = new BrowserWindow({
-    width: 400,
-    height: 250,
-    frame: true,
-    resizable: false,
-    webPreferences: { nodeIntegration: true, contextIsolation: false },
-  });
-  setupWindow.loadFile(path.join(__dirname, 'src', 'renderer', 'setup', 'index.html'));
-}
-
 // --- State management ---
 function updateSlimeState() {
   const info = systemInfo.getInfo();
@@ -198,9 +171,53 @@ async function makeNotesNow() {
 }
 // --- end Learning ---
 
+// --- Chat ---
+// Opened from the menu, with ⌥⌘M, or by double-clicking her. Replies stream from the same local model
+// that learning uses, and chat goes first: learning steps aside while she answers.
+let chat = null;
+
+function setupChat() {
+  if (chat) return;
+  chat = createChat({
+    store,
+    stream: chatStream,
+    knowledgeFor: (text) => getRelevantKnowledge(text).replace(/^\s*Relevant knowledge from user's brain:\n/, ''),
+  });
+
+  ipcMain.handle('chat:send', async (event, text) => {
+    if (!chatWindow.isChatSender(event.sender)) return { ok: false, error: 'Not allowed.' };
+    isTalking = true;
+    updateSlimeState();
+    try {
+      const run = () => chat.send(text, { onToken: (piece) => { if (!event.sender.isDestroyed()) event.sender.send('chat:token', piece); } });
+      const reply = learning ? await learning.forChat(run) : await run();
+      return { ok: true, reply };
+    } catch (err) {
+      const offline = /ECONNREFUSED|not found|HTTP 404/i.test(String(err && err.message));
+      return { ok: false, error: offline
+        ? "I can't reach my local model (Ollama). Is it running?"
+        : "Miaw… I lost my train of thought. Try asking again." };
+    } finally {
+      isTalking = false;
+      updateSlimeState();
+    }
+  });
+  ipcMain.handle('chat:history', (event) => (chatWindow.isChatSender(event.sender) ? chat.recent() : []));
+  ipcMain.handle('chat:clear', (event) => { if (chatWindow.isChatSender(event.sender)) chat.clear(); return true; });
+
+  ipcMain.on('pet:open-chat', (event) => {
+    const petWin = petWindowManager.getWindow();
+    if (petWin && !petWin.isDestroyed() && event.sender === petWin.webContents) chatWindow.open();
+  });
+  globalShortcut.register('Alt+CommandOrControl+M', () => chatWindow.open());
+}
+// --- end Chat ---
+
 // Same menu in the menu bar and when you right-click Mysthi
 function appMenuTemplate() {
   return [
+    { label: 'Chat with Mysthi…', accelerator: 'Alt+CommandOrControl+M', click: () => chatWindow.open() },
+    { type: 'separator' },
     {
       label: 'Show/Hide',
       click: () => {
@@ -224,7 +241,6 @@ function buildTrayMenu() {
 
 // --- App lifecycle ---
 app.whenReady().then(() => {
-  claude.init(); // no API key needed in hardcoded mode
   ensureQuackSound();
   startApp();
 });
@@ -270,6 +286,7 @@ function startApp() {
   tray = new Tray(createTrayIcon());
   tray.setToolTip('Mysthi');
   setupLearning();
+  setupChat();
   buildTrayMenu();
 
   // Global shortcut
@@ -285,28 +302,12 @@ function startApp() {
     Menu.buildFromTemplate(appMenuTemplate()).popup({ window: petWin });
   });
 
-  // IPC: track interactions for idle detection (clicks only animate Mysthi; there is no chat)
+  // IPC: track interactions for idle detection (a single click only animates Mysthi; double-click opens chat)
   ipcMain.on('slime:interaction', () => {
     systemInfo.recordInteraction();
     updateSlimeState();
   });
 }
-
-// --- Setup IPC ---
-ipcMain.on('setup:validate', async (event, { apiKey }) => {
-  const result = await claude.validateKey(apiKey);
-  if (result.valid) {
-    saveApiKey(apiKey);
-    claude.init(apiKey);
-    if (setupWindow) {
-      setupWindow.close();
-      setupWindow = null;
-    }
-    startApp();
-  } else {
-    event.reply('setup:error', { error: "That key didn't work — double-check and try again." });
-  }
-});
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
