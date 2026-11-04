@@ -255,7 +255,16 @@
     });
 
     // --- Double-click: open the chat window ---
-    container.addEventListener('dblclick', () => ipcRenderer.send('pet:open-chat'));
+    // Detected from our own clicks: the browser's dblclick is unreliable here because every press
+    // squishes her and starts a possible drag, and the window may move between the two clicks.
+    const DOUBLE_CLICK_MS = 400;
+    let lastClickAt = 0;
+    function isDoubleClick() {
+      const now = Date.now();
+      const double = now - lastClickAt < DOUBLE_CLICK_MS;
+      lastClickAt = double ? 0 : now; // a third click starts over
+      return double;
+    }
 
     // --- Right-click: app menu (learning on/off, pause, show/hide, quit) ---
     document.addEventListener('contextmenu', (e) => {
@@ -307,7 +316,11 @@
       if (elapsed < 200 && dx < 5 && dy < 5 && e.altKey) {
         // ⌥-click: toggle learning pause instead of opening chat
         ipcRenderer.send('learning:toggle-pause');
-      } else if (elapsed < 200 && dx < 5 && dy < 5) {
+      } else if (elapsed < 300 && dx < 5 && dy < 5 && isDoubleClick()) {
+        // Double-click: open the chat
+        ipcRenderer.send('pet:open-chat');
+        playFlourish(svg, 'ear-twitch', 600);
+      } else if (elapsed < 300 && dx < 5 && dy < 5) {
         // It's a click!
         clickCount++;
         ipcRenderer.send('slime:interaction', {});

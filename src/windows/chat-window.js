@@ -20,6 +20,7 @@ function open() {
     title: 'Mysthi',
     backgroundColor: '#f7f5f1',
     show: false,
+    alwaysOnTop: true, // stays above your other windows, like Mysthi herself
     webPreferences: {
       preload: path.join(__dirname, '..', 'renderer', 'chat', 'preload.js'),
       contextIsolation: true,
@@ -27,6 +28,10 @@ function open() {
       sandbox: true,
     },
   });
+
+  // Above normal windows, also on every Space and next to full-screen apps
+  chatWindow.setAlwaysOnTop(true, 'floating');
+  chatWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   // Nothing in a reply may navigate the window or open new ones
   chatWindow.webContents.on('will-navigate', (e) => e.preventDefault());
