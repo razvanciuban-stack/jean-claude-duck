@@ -1,7 +1,7 @@
 // knowledge.js — grow the Mysthi knowledge base (tools, paths, conventions, shortcuts, settings)
 const { redact } = require('./redact');
 const { chatJSON } = require('../services/ollama');
-const { TEXT_MODEL, LEARNING_TIMEOUT_MS, LEARNING_NUM_CTX } = require('./config');
+const { TEXT_MODEL, LEARNING_TIMEOUT_MS, LEARNING_NUM_CTX, LEARNING_MAX_TOKENS } = require('./config');
 const { isUsefulFact } = require('./meaningful');
 
 // Same bounds as task grouping: a long segment is sent in windows, each step line clipped
@@ -57,7 +57,7 @@ async function extractKnowledge({ steps, vault, ask = chatJSON, today }) {
         { role: 'user', content: JSON.stringify({ steps: lines.slice(i, i + MAX_STEPS_PER_CALL) }) },
       ],
       timeoutMs: LEARNING_TIMEOUT_MS,
-      options: { num_ctx: LEARNING_NUM_CTX },
+      options: { num_ctx: LEARNING_NUM_CTX, num_predict: LEARNING_MAX_TOKENS },
     });
     if (!res || !Array.isArray(res.facts)) throw new Error('Knowledge response has no facts array');
     facts.push(...res.facts.filter(isUsefulFact));

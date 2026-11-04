@@ -3,8 +3,8 @@ const os = require('os');
 const path = require('path');
 
 module.exports = {
-  VISION_MODEL: 'qwen3-vl:8b',
-  TEXT_MODEL: 'qwen3-vl:8b',
+  VISION_MODEL: 'qwen3-vl:8b-instruct', // the instruct edition answers directly; the plain 8b tag is the thinking edition
+  TEXT_MODEL: 'qwen3-vl:8b-instruct',
   VAULT_DIR: path.join(os.homedir(), 'ObsidianVault', 'mysthi'),
   IDLE_THRESHOLD_MS: 180000,
   CONFIDENT_AT: 3,
@@ -16,5 +16,8 @@ module.exports = {
   // enough for a 120-step listing so nothing is truncated silently.
   LEARNING_TIMEOUT_MS: 240000,
   LEARNING_NUM_CTX: 16384,
+  // Longest answer a learning call may write: a task list, a merged lesson or a few facts fit easily;
+  // anything longer is a runaway reply and is cut off in seconds instead of running into the timeout
+  LEARNING_MAX_TOKENS: 4096,
   VISION_TIMEOUT_MS: 60000,
 };

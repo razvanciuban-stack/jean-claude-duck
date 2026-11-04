@@ -73,3 +73,11 @@ test('think: false is sent so reasoning models skip their hidden thinking step',
   await ollama().chat({ model: 'm', messages: [] });
   assert.ok(!('think' in sent), 'not sent unless asked for');
 });
+
+test('an Ollama error reply becomes an error with its reason, not an empty answer', async () => {
+  handler = (req, res) => { res.statusCode = 500; res.end(JSON.stringify({ error: 'model ran out of memory' })); };
+  await assert.rejects(
+    ollama().chat({ model: 'm', messages: [] }),
+    (err) => err.status === 500 && /model ran out of memory/.test(err.message),
+  );
+});

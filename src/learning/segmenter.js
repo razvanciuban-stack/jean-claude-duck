@@ -1,6 +1,6 @@
 // segmenter.js — splits journal steps into time segments and asks the local model to group them into tasks
 const { chatJSON } = require('../services/ollama');
-const { TEXT_MODEL, SEGMENT_GAP_MS, LEARNING_TIMEOUT_MS, LEARNING_NUM_CTX } = require('./config');
+const { TEXT_MODEL, SEGMENT_GAP_MS, LEARNING_TIMEOUT_MS, LEARNING_NUM_CTX, LEARNING_MAX_TOKENS } = require('./config');
 
 const MAX_STEPS_PER_CALL = 120;
 const MAX_FIELD = 200;
@@ -78,7 +78,7 @@ async function groupTasks(segment, ask = chatJSON) {
           { role: 'user', content: listing(win) },
         ],
         timeoutMs: LEARNING_TIMEOUT_MS,
-        options: { num_ctx: LEARNING_NUM_CTX },
+        options: { num_ctx: LEARNING_NUM_CTX, num_predict: LEARNING_MAX_TOKENS },
       });
       const tasks = validate(raw, win, used);
       if (!tasks) return null;

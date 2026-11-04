@@ -31,7 +31,16 @@ function request(method, path, payload, timeoutMs) {
     }, (res) => {
       let body = '';
       res.on('data', (chunk) => { body += chunk; });
-      res.on('end', () => resolve(body));
+      res.on('end', () => {
+        // Keep Ollama's own reason (model missing, out of memory…) instead of treating it as an empty reply
+        if (res.statusCode >= 400) {
+          let reason = '';
+          try { reason = JSON.parse(body).error || ''; } catch { reason = body.slice(0, 200); }
+          reject(Object.assign(new Error(`Ollama HTTP ${res.statusCode}: ${reason}`), { status: res.statusCode }));
+          return;
+        }
+        resolve(body);
+      });
     });
     req.on('error', reject);
     req.on('timeout', () => { req.destroy(); reject(new Error('Ollama timeout')); });
