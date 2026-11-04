@@ -255,3 +255,19 @@ test('events from the pet itself (packaged or dev Electron) are dropped and do n
   assert.deepStrictEqual(shots, []);
   assert.deepStrictEqual(watching, [true]);
 });
+
+test('HelperClient reports how the helper exited', async () => {
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const { HelperClient } = require('../../src/learning/helper-client');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mysthi-hx-'));
+  const bin = path.join(dir, 'exit3.js');
+  fs.writeFileSync(bin, '#!/usr/bin/env node\nprocess.exit(3);\n', { mode: 0o755 });
+  const h = new HelperClient(bin);
+  const exits = [];
+  h.on('exited', (why) => exits.push(why));
+  const dead = new Promise((r) => h.on('dead', r));
+  h.start();
+  const why = await dead;
+  assert.deepStrictEqual(why, { reason: 'exit', code: 3, signal: null });
+  assert.strictEqual(exits.length, 2);
+});

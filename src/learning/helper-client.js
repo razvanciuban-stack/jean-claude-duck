@@ -25,24 +25,28 @@ class HelperClient extends EventEmitter {
     let child;
     try {
       child = spawn(this.binPath, [], { stdio: ['pipe', 'pipe', 'ignore'] });
-    } catch {
-      this._died();
+    } catch (err) {
+      this._died({ reason: 'spawn failed', error: err && err.code ? err.code : String(err && err.message) });
       return;
     }
     this.child = child;
     this.buffer = '';
     let handled = false;
-    const onGone = () => {
+    const onGone = (codeOrErr, signal) => {
       if (handled) return;
       handled = true;
       if (this.child !== child) return; // stale child (stopped or replaced)
       this.child = null;
       if (this.stopped) return;
+      const why = codeOrErr instanceof Error
+        ? { reason: 'error', error: codeOrErr.code || codeOrErr.message }
+        : { reason: 'exit', code: codeOrErr, signal: signal || null };
+      this.emit('exited', why);
       if (this.restarts < 1) {
         this.restarts += 1;
         this._spawn();
       } else {
-        this._died();
+        this._died(why);
       }
     };
     child.on('error', onGone);
@@ -72,8 +76,8 @@ class HelperClient extends EventEmitter {
     }
   }
 
-  _died() {
-    this.emit('dead');
+  _died(why = {}) {
+    this.emit('dead', why);
   }
 
   send(cmd) {

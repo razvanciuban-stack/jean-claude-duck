@@ -56,3 +56,14 @@ test('a failed reply keeps the question but saves no empty answer; empty questio
   assert.deepStrictEqual(chat.recent(), [{ role: 'user', content: 'hello?' }]);
   await assert.rejects(chat.send('   '), /Empty/);
 });
+
+test('she is told her real learning status with every message', async () => {
+  let request = null;
+  let status = 'Learning: off';
+  const chat = createChat({ store: fakeStore(), stream: async (a) => { request = a; return 'ok'; }, learningStatus: () => status });
+  await chat.send('are you still learning?');
+  assert.match(request.messages[0].content, /learning status right now: Learning: off\./);
+  status = 'Learning: watching';
+  await chat.send('and now?');
+  assert.match(request.messages[0].content, /learning status right now: Learning: watching\./);
+});

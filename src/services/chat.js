@@ -12,9 +12,9 @@ const MAX_REPLY_TOKENS = 600;
 const SILENCE_TIMEOUT_MS = 300000;
 
 // deps: { store: { get(key, fallback), set(key, value) }, stream: ollama.chatStream,
-//         knowledgeFor: (text) => string, now: () => Date }
+//         knowledgeFor: (text) => string, learningStatus: () => string, now: () => Date }
 function createChat(deps) {
-  const { store, stream, knowledgeFor = () => '', now = () => new Date() } = deps;
+  const { store, stream, knowledgeFor = () => '', learningStatus = () => '', now = () => new Date() } = deps;
 
   const history = () => store.get(HISTORY_KEY, []);
   function remember(role, content) {
@@ -23,6 +23,8 @@ function createChat(deps) {
     list.push({ role, content: redact(String(content)).text, at: now().getTime() });
     store.set(HISTORY_KEY, list.slice(-MAX_STORED));
   }
+
+  const safeStatus = () => { try { return String(learningStatus() || ''); } catch { return ''; } };
 
   // onToken(piece) as the reply arrives; resolves with the full reply text
   async function send(text, { onToken = () => {} } = {}) {
@@ -36,7 +38,7 @@ function createChat(deps) {
       model: TEXT_MODEL,
       think: false,
       messages: [
-        { role: 'system', content: buildSystemPrompt({ now: now(), knowledge }) },
+        { role: 'system', content: buildSystemPrompt({ now: now(), knowledge, learning: safeStatus() }) },
         ...context,
         { role: 'user', content: question },
       ],

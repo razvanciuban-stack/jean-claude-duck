@@ -421,3 +421,21 @@ test('chat comes first: no screenshot descriptions during a reply, no note-makin
   assert.strictEqual(ctx.pipelineCalls.run, 1, 'notes resume once the chat has been quiet');
   assert.deepStrictEqual(ctx.pushed.map((p) => p.id), ['after-chat']);
 });
+
+test('the event log explains why learning switched on and off (times and reasons only)', () => {
+  const ctx = setup();
+  ctx.learning.enable();
+  ctx.helpers[0].emit('exited', { reason: 'exit', code: 9, signal: null });
+  ctx.helpers[0].emit('dead', { reason: 'exit', code: 9, signal: null });
+  assert.strictEqual(ctx.learning.isEnabled(), false);
+  ctx.learning.enable();
+  ctx.learning.disable();
+  const log = fs.readFileSync(path.join(ctx.stateDir, 'events.log'), 'utf8').trim().split('\n').map((l) => l.replace(/^\S+ /, ''));
+  assert.deepStrictEqual(log, [
+    'switched on',
+    'helper exited (reason=exit code=9), restarting once',
+    'switched off automatically: helper died twice (reason=exit code=9)',
+    'switched on',
+    'switched off by the user',
+  ]);
+});

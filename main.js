@@ -182,6 +182,8 @@ function setupChat() {
     store,
     stream: chatStream,
     knowledgeFor: (text) => getRelevantKnowledge(text).replace(/^\s*Relevant knowledge from user's brain:\n/, ''),
+    // Her real status, so she never claims to be learning when she isn't
+    learningStatus: () => (learning ? learning.statusLabel() : 'Learning: off'),
   });
 
   ipcMain.handle('chat:send', async (event, text) => {

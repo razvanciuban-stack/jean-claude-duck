@@ -2,6 +2,7 @@
 // Never requires 'electron': main.js passes the store, callbacks and getIdleMs in.
 // Never logs event data — only fixed strings.
 
+const fs = require('fs');
 const path = require('path');
 const { HelperClient } = require('./helper-client');
 const { createJournal } = require('./journal');
@@ -185,19 +186,32 @@ function createLearning({
     }
   }
 
+  // Why learning switched on or off, kept so a surprise switch-off can be explained later.
+  // Times and reasons only — never anything the user typed or saw. Capped at ~64 KB.
+  const EVENTS_FILE = path.join(stateDir, 'events.log');
+  function logEvent(text) {
+    try {
+      fs.mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+      try { if (fs.statSync(EVENTS_FILE).size > 64 * 1024) fs.renameSync(EVENTS_FILE, EVENTS_FILE + '.1'); } catch { /* no file yet */ }
+      fs.appendFileSync(EVENTS_FILE, `${new Date(d.now()).toISOString()} ${text}\n`, { mode: 0o600 });
+    } catch { /* logging must never break learning */ }
+  }
+  const describe = (why = {}) => Object.entries(why).filter(([, v]) => v != null).map(([k, v]) => `${k}=${v}`).join(' ');
+
   // Helper died, or the runtime could not be built: turn learning off and tell the user once
-  function fail() {
+  function fail(reason = 'helper unavailable') {
     console.error('learning: helper unavailable');
-    disable();
+    logEvent(`switched off automatically: ${reason}`);
+    disable(null);
     if (!reportedDead) {
       reportedDead = true;
       onHelperUnavailable();
     }
   }
 
-  function onHelperDead(h) {
+  function onHelperDead(h, why) {
     if (h !== helper) return;
-    fail();
+    fail(`helper died twice (${describe(why)})`);
   }
 
   function startRuntime() {
@@ -215,7 +229,8 @@ function createLearning({
     const h = d.createHelper(helperPath);
     helper = h;
     h.on('event', (event) => onHelperEvent(h, event));
-    h.on('dead', () => onHelperDead(h));
+    h.on('dead', (why) => onHelperDead(h, why));
+    h.on('exited', (why) => { if (h === helper) logEvent(`helper exited (${describe(why)}), restarting once`); });
     // A restarted helper comes up unpaused: re-apply the pause, and if that cannot be delivered stop it
     h.on('spawned', () => {
       if (h === helper && paused && !h.send({ cmd: 'pause' })) {
@@ -250,10 +265,11 @@ function createLearning({
     try {
       vault.ensure();
       startRuntime();
-    } catch {
-      fail();
+    } catch (err) {
+      fail(`start failed: ${err && err.message}`);
       return;
     }
+    logEvent('resumed at app start');
     update();
   }
 
@@ -269,16 +285,19 @@ function createLearning({
       if (helper) { // a helper that died during start() has already turned learning off
         onboarding = true;
         helper.send({ cmd: 'request-permissions' });
+        logEvent('switched on');
       }
-    } catch {
-      fail();
+    } catch (err) {
+      fail(`enable failed: ${err && err.message}`);
       return;
     }
     update();
     checkModel().catch(() => {});
   }
 
-  function disable() {
+  // source: who switched it off, for the event log (null when fail() already logged the reason)
+  function disable(source = 'by the user') {
+    if (source) logEvent(`switched off ${source}`);
     enabled = false;
     paused = false;
     store.set(STORE_KEY, false);
