@@ -60,14 +60,15 @@ function titleOf(md, file) {
   return h ? h[1].trim() : file.replace(/\.md$/, '').replace(/-/g, ' ');
 }
 
-// The readable part of a note: no frontmatter, no lesson JSON block, no step markers, no role jargon
-function readableText(md) {
+// The readable part of a note: no frontmatter, no lesson JSON block, no step markers, no role jargon.
+// jargon: false for notes you wrote (memory/) — your words stay exactly as you said them.
+function readableText(md, { jargon = true } = {}) {
   return frontmatter(md.replace(/\r\n?/g, '\n')).body
     .replace(/```mysthi-lesson[\s\S]*?```/g, '')
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/\[\[[^\]|]*\|([^\]]*)\]\]/g, '$1')
     .replace(/\[\[([^\]]*)\]\]/g, '$1')
-    .replace(/\bAX[A-Z][A-Za-z]*\s*/g, '')
+    .replace(jargon ? /\bAX[A-Z][A-Za-z]*\s*/g : /(?!)/g, '')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
@@ -111,7 +112,7 @@ function createVaultMemory({ vault, dirs = INDEXED_DIRS, budget = 3000, perNote 
         try { md = vault.read(rel); } catch { md = null; }
         if (md == null) { docs.delete(rel); continue; }
         const title = titleOf(md, file);
-        const text = readableText(md);
+        const text = readableText(md, { jargon: dir !== 'memory' });
         const tf = new Map();
         const tokens = tokenize(`${title}\n${text}`);
         for (const t of tokens) tf.set(t, (tf.get(t) || 0) + 1);

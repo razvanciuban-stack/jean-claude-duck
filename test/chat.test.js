@@ -124,3 +124,50 @@ test('the fullest prompt still fits the model context with room for the reply', 
   const approxTokens = Math.ceil(chars / 3); // conservative: ~3 characters per token
   assert.ok(approxTokens + MAX_REPLY_TOKENS < CHAT_NUM_CTX, `≈${approxTokens} tokens + reply vs ${CHAT_NUM_CTX}`);
 });
+
+test('"ține minte că…" saves a note, confirms with its path, and never asks the model', async () => {
+  const saved = [];
+  let asked = false;
+  const chat = createChat({
+    store: fakeStore(),
+    stream: async () => { asked = true; return 'model'; },
+    saveMemory: (fact) => { saved.push(fact); return { path: 'memory/2026-11-04-cafea.md', text: fact, changed: false }; },
+  });
+  const pieces = [];
+  const reply = await chat.send('Ține minte că beau cafea fără zahăr', { onToken: (p) => pieces.push(p) });
+  assert.deepStrictEqual(saved, ['beau cafea fără zahăr']);
+  assert.strictEqual(asked, false);
+  assert.match(reply, /memory\/2026-11-04-cafea\.md/);
+  assert.match(reply, /Am notat/);
+  assert.strictEqual(pieces.join(''), reply);
+  assert.deepStrictEqual(chat.recent().map((m) => m.role), ['user', 'assistant']);
+});
+
+test('the Remember button saves the whole message; redaction is shown back', async () => {
+  const chat = createChat({
+    store: fakeStore(),
+    stream: async () => 'model',
+    saveMemory: (fact) => ({ path: 'memory/x.md', text: 'card [REDACTED]', changed: true }),
+  });
+  const reply = await chat.send('card 4111 1111 1111 1111', { remember: true });
+  assert.match(reply, /memory\/x\.md/);
+  assert.match(reply, /card \[REDACTED\]/);
+});
+
+test('without a trigger nothing is saved; an empty "remember" asks what to keep', async () => {
+  let saves = 0;
+  const chat = createChat({ store: fakeStore(), stream: async () => 'ok', saveMemory: () => { saves++; return { path: 'memory/x.md', text: '', changed: false }; } });
+  await chat.send('Do you remember my coffee?');
+  assert.strictEqual(saves, 0);
+  const reply = await chat.send('remember');
+  assert.strictEqual(saves, 0);
+  assert.match(reply, /What should I remember/);
+});
+
+test('she is told she can remember on request', async () => {
+  let request = null;
+  const chat = createChat({ store: fakeStore(), stream: async (a) => { request = a; return 'ok'; } });
+  await chat.send('hi');
+  assert.match(request.messages[0].content, /remember/i);
+  assert.doesNotMatch(request.messages[0].content, /do not remember chat messages as notes yet/);
+});

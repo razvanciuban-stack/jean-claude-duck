@@ -2,6 +2,7 @@
 const list = document.getElementById('messages');
 const input = document.getElementById('input');
 const sendBtn = document.getElementById('send');
+const keepBtn = document.getElementById('keep');
 const clearBtn = document.getElementById('clear');
 const status = document.getElementById('status');
 let busy = false;
@@ -12,7 +13,7 @@ function showEmpty() {
   list.textContent = '';
   const p = document.createElement('p');
   p.className = 'empty';
-  p.textContent = 'Miaw! Ask me anything — in English or Română. I only talk; I never click or type for you.';
+  p.textContent = 'Miaw! Ask me anything — in English or Română. Say “remember …” or “ține minte …” and I’ll keep it as a note. I only talk; I never click or type for you.';
   list.appendChild(p);
 }
 
@@ -39,6 +40,7 @@ function thinkingBubble() {
 function setBusy(on) {
   busy = on;
   sendBtn.disabled = on || !input.value.trim();
+  keepBtn.disabled = sendBtn.disabled;
   status.textContent = on ? 'thinking…' : '';
 }
 
@@ -47,7 +49,7 @@ function autosize() {
   input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
 }
 
-async function send() {
+async function send(remember = false) {
   const text = input.value.trim();
   if (!text || busy) return;
   input.value = '';
@@ -63,7 +65,7 @@ async function send() {
   setBusy(true);
   // No words yet after a few seconds: her model is probably finishing a note-making request first
   const slow = setTimeout(() => { if (!got) status.textContent = 'her model is busy — probably finishing notes. Hang on…'; }, 8000);
-  const result = await window.mysthi.send(text);
+  const result = await window.mysthi.send(text, remember === true);
   clearTimeout(slow);
   setBusy(false);
   if (result.ok) {
@@ -75,11 +77,12 @@ async function send() {
   input.focus();
 }
 
-input.addEventListener('input', () => { autosize(); sendBtn.disabled = busy || !input.value.trim(); });
+input.addEventListener('input', () => { autosize(); sendBtn.disabled = busy || !input.value.trim(); keepBtn.disabled = sendBtn.disabled; });
 input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
-sendBtn.addEventListener('click', send);
+sendBtn.addEventListener('click', () => send());
+keepBtn.addEventListener('click', () => send(true));
 clearBtn.addEventListener('click', async () => {
   if (busy) return;
   await window.mysthi.clear();

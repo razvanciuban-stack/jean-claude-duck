@@ -8,6 +8,7 @@ const chatWindow = require('./src/windows/chat-window');
 const { createChat } = require('./src/services/chat');
 const { chatStream } = require('./src/services/ollama');
 const { createVaultMemory } = require('./src/services/vault-memory');
+const { saveMemory } = require('./src/services/memory-notes');
 const { createVault } = require('./src/learning/vault');
 const systemInfo = require('./src/services/system-info');
 const activityMonitor = require('./src/services/activity-monitor');
@@ -179,23 +180,25 @@ let chat = null;
 
 function setupChat() {
   if (chat) return;
+  const chatVault = createVault(VAULT_DIR);
+  const memory = createVaultMemory({ vault: chatVault });
   chat = createChat({
     store,
     stream: chatStream,
-    knowledgeFor: (() => {
-      const memory = createVaultMemory({ vault: createVault(VAULT_DIR) });
-      return (text) => memory.search(text);
-    })(),
+    knowledgeFor: (text) => memory.search(text),
+    // "ține minte că…" / "remember…" / the Remember button → a note in mysthi/memory/
+    saveMemory: (fact) => { chatVault.ensure(); return saveMemory({ vault: chatVault, fact }); },
     // Her real status, so she never claims to be learning when she isn't
     learningStatus: () => (learning ? learning.statusLabel() : 'Learning: off'),
   });
 
-  ipcMain.handle('chat:send', async (event, text) => {
+  ipcMain.handle('chat:send', async (event, text, opts) => {
     if (!chatWindow.isChatSender(event.sender)) return { ok: false, error: 'Not allowed.' };
     isTalking = true;
     updateSlimeState();
     try {
-      const run = () => chat.send(text, { onToken: (piece) => { if (!event.sender.isDestroyed()) event.sender.send('chat:token', piece); } });
+      const keepIt = !!(opts && opts.remember === true);
+      const run = () => chat.send(text, { remember: keepIt, onToken: (piece) => { if (!event.sender.isDestroyed()) event.sender.send('chat:token', piece); } });
       const reply = learning ? await learning.forChat(run) : await run();
       return { ok: true, reply };
     } catch (err) {

@@ -68,6 +68,12 @@
       background: var(--ink); color: var(--paper); font: inherit; font-weight: 600; cursor: pointer;
     }
     #send:disabled { opacity: 0.35; cursor: default; }
+    #keep {
+      align-self: flex-end; height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px;
+      background: var(--card); color: var(--ink); font: inherit; cursor: pointer;
+    }
+    #keep:hover:not(:disabled) { border-color: var(--ink); }
+    #keep:disabled { opacity: 0.35; cursor: default; }
   </style>
 </head>
 <body>
@@ -84,7 +90,8 @@
   </header>
   <main id="messages"></main>
   <footer>
-    <textarea id="input" rows="1" placeholder="Talk to Mysthi…" autofocus></textarea>
+    <textarea id="input" rows="1" placeholder="Talk to Mysthi… (start with “remember” to save a note)" autofocus></textarea>
+    <button id="keep" disabled title="Save this message as a note in mysthi/memory (Reține)">Remember</button>
     <button id="send" disabled>Send</button>
   </footer>
   <script src="chat.js"></script>

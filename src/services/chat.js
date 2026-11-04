@@ -2,6 +2,7 @@
 const { TEXT_MODEL, LEARNING_NUM_CTX } = require('../learning/config');
 const { redact } = require('../learning/redact');
 const { buildSystemPrompt } = require('./personality');
+const { parseRemember } = require('./memory-notes');
 
 const HISTORY_KEY = 'mysthiChat'; // a fresh history: the old duck-era chat stays untouched until it's cleaned up
 const MAX_STORED = 200;           // messages kept across sessions
@@ -29,9 +30,10 @@ function notesBlock(notes) {
 }
 
 // deps: { store: { get(key, fallback), set(key, value) }, stream: ollama.chatStream,
-//         knowledgeFor: (text) => [{ path, title, snippet, source }], learningStatus: () => string, now: () => Date }
+//         knowledgeFor: (text) => [{ path, title, snippet, source }], learningStatus: () => string, now: () => Date,
+//         saveMemory: (fact) => { path, text, changed } }
 function createChat(deps) {
-  const { store, stream, knowledgeFor = () => [], learningStatus = () => '', now = () => new Date() } = deps;
+  const { store, stream, knowledgeFor = () => [], learningStatus = () => '', now = () => new Date(), saveMemory = null } = deps;
   let lastSources = [];
 
   const history = () => store.get(HISTORY_KEY, []);
@@ -44,10 +46,44 @@ function createChat(deps) {
 
   const safeStatus = () => { try { return String(learningStatus() || ''); } catch { return ''; } };
 
-  // onToken(piece) as the reply arrives; resolves with the full reply text
-  async function send(text, { onToken = () => {} } = {}) {
+  // "ține minte că…" / "remember…" (or the Remember button): save a note, answer with its path. No model call:
+  // only you decide what is kept, and she confirms exactly what was written.
+  function keep(question, asked, onToken) {
+    const lang = asked ? asked.lang : (/[ăâîșțşţ]/i.test(question) ? 'ro' : 'en');
+    const fact = asked ? asked.fact : question;
+    const ro = lang === 'ro';
+    let reply;
+    if (!fact) {
+      reply = ro ? 'Ce să țin minte? Scrie „ține minte că …”.' : 'What should I remember? Start with "remember that …".';
+    } else if (!saveMemory) {
+      reply = ro ? 'Nu pot salva notițe acum.' : "I can't save notes right now.";
+    } else {
+      try {
+        const saved = saveMemory(fact);
+        reply = ro ? `Miaw! Am notat în ${saved.path}` : `Miaw! Noted in ${saved.path}`;
+        if (saved.changed) {
+          reply += ro
+            ? `\nAm ascuns datele sensibile. Am salvat: „${saved.text}”`
+            : `\nI hid the sensitive parts. Saved: "${saved.text}"`;
+        }
+      } catch {
+        reply = ro ? 'Miaw… n-am putut salva notița.' : "Miaw… I couldn't save that note.";
+      }
+    }
+    remember('user', question);
+    remember('assistant', reply);
+    lastSources = [];
+    onToken(reply);
+    return reply;
+  }
+
+  // onToken(piece) as the reply arrives; resolves with the full reply text.
+  // remember: true when the Remember button was used — the whole message becomes a note.
+  async function send(text, { onToken = () => {}, remember: keepIt = false } = {}) {
     const question = String(text || '').trim();
     if (!question) throw new Error('Empty message');
+    const asked = parseRemember(question);
+    if (asked || keepIt) return keep(question, asked, onToken);
     const context = history().slice(-CONTEXT_MESSAGES).map(({ role, content }) => ({
       role,
       content: content.length > MAX_HISTORY_CHARS ? `${content.slice(0, MAX_HISTORY_CHARS)}…` : content,

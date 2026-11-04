@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const { VAULT_DIR } = require('./config');
 const defaults = require('./data/default-do-not-watch.json');
 
-const SUBDIRS = ['lessons', 'knowledge', 'log', 'reports'];
+const SUBDIRS = ['lessons', 'knowledge', 'log', 'reports', 'memory'];
 const DNW_FILE = 'do-not-watch.md';
 
 function seedDoNotWatch() {

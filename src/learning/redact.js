@@ -2,6 +2,7 @@
 // Rules run in order; later rules never touch earlier placeholders. Over-redaction beats leaking.
 
 const PLACEHOLDER = /^\[[A-Z_]+\]$/u;
+const VAULT_NOTE_PATH = /^(?:lessons|knowledge|log|memory|reports)\/[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const QUOTED_OR_WORD = '"[^"\\n]*"|\'[^\'\\n]*\'|\\S+';
 
 // Value text without its surrounding quotes
@@ -186,7 +187,8 @@ const RULES = [
   {
     kind: 'API_KEY',
     pattern: /[A-Za-z0-9+/=_-]{32,}/gu,
-    replace: (m) => (shannonEntropy(m) > 4.0 ? '[API_KEY]' : undefined),
+    // A path to one of Mysthi's own notes (memory/2026-11-04-some-words) is not a key
+    replace: (m) => (!VAULT_NOTE_PATH.test(m) && shannonEntropy(m) > 4.0 ? '[API_KEY]' : undefined),
   },
 ];
 

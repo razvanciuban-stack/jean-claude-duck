@@ -37,3 +37,12 @@ test('does not backtrack quadratically on long dashed input', () => {
   redact('a-'.repeat(20000));
   assert.ok(Date.now() - t0 < 200, `took ${Date.now() - t0} ms`);
 });
+
+test('a path to one of her own notes is not mistaken for a key; real keys still are', () => {
+  const { redact } = require('../../src/learning/redact');
+  const note = 'Noted in memory/2026-11-04-release-ul-aplicatiei-mysthi-1-0.md';
+  assert.strictEqual(redact(note).text, note);
+  assert.strictEqual(redact('see lessons/create-and-customize-a-greeting-card-in-sketch.md').text, 'see lessons/create-and-customize-a-greeting-card-in-sketch.md');
+  assert.match(redact('token Zx8Qp2Lm9Rt4Vb7Nc1Kd5Hf3Jg6Ws0Ye').text, /\[API_KEY\]/);
+  assert.match(redact('memory/Zx8Qp2Lm9Rt4Vb7Nc1Kd5Hf3Jg6Ws0Ye').text, /\[API_KEY\]/);
+});

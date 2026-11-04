@@ -123,3 +123,9 @@ test('a Romanian question finds an English note (keyboard shortcuts, file naming
   assert.strictEqual(memory.search('ce scurtături de tastatură folosesc?')[0].path, 'knowledge/keyboard-shortcuts.md');
   assert.strictEqual(memory.search('cum îmi numesc fișierele?')[0].path, 'knowledge/naming.md');
 });
+
+test('your own notes (memory/) keep every word, AXA included', () => {
+  const { vault, memory } = setup();
+  vault.writeAtomic('memory/2026-11-04-asigurare.md', '---\nsource: user-explicit\n---\n# Asigurare\nAXA este asigurarea mea de sănătate.\n');
+  assert.match(memory.search('ce asigurare am?')[0].snippet, /AXA este/);
+});
