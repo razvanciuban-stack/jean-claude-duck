@@ -111,6 +111,8 @@ function createVaultMemory({ vault, dirs = INDEXED_DIRS, budget = 3000, perNote 
         let md;
         try { md = vault.read(rel); } catch { md = null; }
         if (md == null) { docs.delete(rel); continue; }
+        // A note you corrected is history now: only its replacement is recalled
+        if (/^status:\s*"?superseded"?\s*$/m.test(frontmatter(md).raw)) { docs.delete(rel); seen.delete(rel); continue; }
         const title = titleOf(md, file);
         const text = readableText(md, { jargon: dir !== 'memory' });
         const tf = new Map();

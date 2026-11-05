@@ -31,28 +31,42 @@ function notesBlock(notes) {
 
 // deps: { store: { get(key, fallback), set(key, value) }, stream: ollama.chatStream,
 //         knowledgeFor: (text) => [{ path, title, snippet, source }], learningStatus: () => string, now: () => Date,
-//         saveMemory: (fact) => { path, text, changed } }
+//         saveMemory: (fact) => { path, text, changed }, correctMemory: (path, fact) => { path, text, changed, replaced },
+//         deleteMemory: (path) => { path, trashPath }, noteActive: (path) => bool }
 function createChat(deps) {
-  const { store, stream, knowledgeFor = () => [], learningStatus = () => '', now = () => new Date(), saveMemory = null } = deps;
+  const {
+    store, stream, knowledgeFor = () => [], learningStatus = () => '', now = () => new Date(),
+    saveMemory = null, correctMemory = null, deleteMemory = null, noteActive = () => true,
+  } = deps;
   let lastSources = [];
 
   const history = () => store.get(HISTORY_KEY, []);
-  function remember(role, content) {
+  // extra: { sources: [{ path, title, source }] } — the notes an answer used (shown as chips in the window)
+  //        { notes: [path] } — the note a remember/correct exchange is about
+  function remember(role, content, extra = {}) {
     // Nothing reaches disk unredacted, chat included
     const list = history();
-    list.push({ role, content: redact(String(content)).text, at: now().getTime() });
+    list.push({ role, content: redact(String(content)).text, at: now().getTime(), ...extra });
     store.set(HISTORY_KEY, list.slice(-MAX_STORED));
   }
+
+  const refsOf = (m) => [...(m.notes || []), ...(m.sources || []).map((s) => s.path)];
+  const stillTrue = (m) => refsOf(m).every((p) => { try { return noteActive(p); } catch { return true; } });
+  // Romanian if it has ă/â/î/ș/ț, or at least two common Romanian words (many people type without diacritics)
+  const RO_WORDS = /\b(si|ca|este|sunt|e|pe|cu|nu|la|din|de|fost|am|ai|sa|mai|care|cand|unde|mutat|noiembrie|luni|marti|vineri)\b/gi;
+  const isRo = (text) => /[ăâîșțşţ]/i.test(text) || (String(text).match(RO_WORDS) || []).length >= 2;
+  const shortTitle = (text) => (text.length > 60 ? `${text.slice(0, 59).trimEnd()}…` : text);
 
   const safeStatus = () => { try { return String(learningStatus() || ''); } catch { return ''; } };
 
   // "ține minte că…" / "remember…" (or the Remember button): save a note, answer with its path. No model call:
   // only you decide what is kept, and she confirms exactly what was written.
   function keep(question, asked, onToken) {
-    const lang = asked ? asked.lang : (/[ăâîșțşţ]/i.test(question) ? 'ro' : 'en');
+    const lang = asked ? asked.lang : (isRo(question) ? 'ro' : 'en');
     const fact = asked ? asked.fact : question;
     const ro = lang === 'ro';
     let reply;
+    let note = null;
     if (!fact) {
       reply = ro ? 'Ce să țin minte? Scrie „ține minte că …”.' : 'What should I remember? Start with "remember that …".';
     } else if (!saveMemory) {
@@ -60,6 +74,7 @@ function createChat(deps) {
     } else {
       try {
         const saved = saveMemory(fact);
+        note = { path: saved.path, title: shortTitle(saved.text), source: 'user-explicit' };
         reply = ro ? `Miaw! Am notat în ${saved.path}` : `Miaw! Noted in ${saved.path}`;
         if (saved.changed) {
           reply += ro
@@ -70,11 +85,50 @@ function createChat(deps) {
         reply = ro ? 'Miaw… n-am putut salva notița.' : "Miaw… I couldn't save that note.";
       }
     }
-    remember('user', question);
-    remember('assistant', reply);
-    lastSources = [];
+    const link = note ? { notes: [note.path] } : {};
+    remember('user', question, link);
+    remember('assistant', reply, note ? { ...link, sources: [note] } : {});
+    lastSources = note ? [note] : [];
     onToken(reply);
     return reply;
+  }
+
+  // The right version of one of your notes: a new note, the old one marked superseded
+  async function correct(notePath, text) {
+    if (!correctMemory) throw new Error("Can't correct notes right now");
+    const fact = String(text || '').trim();
+    if (!fact) throw new Error('Empty correction');
+    const fixed = correctMemory(notePath, fact); // throws for anything but your own active notes
+    const ro = isRo(fact);
+    let reply = ro
+      ? `Miaw! Am corectat. Varianta nouă e în ${fixed.path}; ${fixed.replaced} nu mai e folosită.`
+      : `Miaw! Corrected. The new version is in ${fixed.path}; ${fixed.replaced} is no longer used.`;
+    if (fixed.changed) reply += ro ? `\nAm ascuns datele sensibile. Am salvat: „${fixed.text}”` : `\nI hid the sensitive parts. Saved: "${fixed.text}"`;
+    const n = { path: fixed.path, title: shortTitle(fixed.text), source: 'user-explicit' };
+    remember('user', `${ro ? 'Corectare' : 'Correction'}: ${fact}`, { notes: [n.path] });
+    remember('assistant', reply, { notes: [n.path], sources: [n] });
+    lastSources = [n];
+    return reply;
+  }
+
+  // Drop the stored messages about a note (the remember exchange and answers that used it)
+  function forget(notePath) {
+    const list = history();
+    const kept = list.filter((m) => !refsOf(m).includes(notePath));
+    store.set(HISTORY_KEY, kept);
+    return list.length - kept.length;
+  }
+
+  // Moves one of your notes to mysthi/.trash/; optionally forgets the chat messages about it
+  function removeNote(notePath, { dropHistory = false } = {}) {
+    if (!deleteMemory) throw new Error("Can't delete notes right now");
+    const res = deleteMemory(notePath); // throws for anything but your own notes
+    const dropped = dropHistory ? forget(notePath) : 0;
+    const older = res.olderVersions ? ` and ${res.olderVersions} older version${res.olderVersions === 1 ? '' : 's'}` : '';
+    let message = `Deleted ${res.path}${older} (moved to mysthi/${res.trashPath}). Empty the trash from Mysthi's menu to remove it for good.`;
+    if (dropped) message += ` Removed ${dropped} chat message${dropped === 1 ? '' : 's'} about it.`;
+    message += ' Copies may still exist outside the app: Time Machine backups, or Obsidian Sync if you turn it on.';
+    return { ...res, dropped, message };
   }
 
   // onToken(piece) as the reply arrives; resolves with the full reply text.
@@ -84,7 +138,8 @@ function createChat(deps) {
     if (!question) throw new Error('Empty message');
     const asked = parseRemember(question);
     if (asked || keepIt) return keep(question, asked, onToken);
-    const context = history().slice(-CONTEXT_MESSAGES).map(({ role, content }) => ({
+    // Messages that relied on a note you deleted or corrected would repeat the old fact: leave them out
+    const context = history().filter(stillTrue).slice(-CONTEXT_MESSAGES).map(({ role, content }) => ({
       role,
       content: content.length > MAX_HISTORY_CHARS ? `${content.slice(0, MAX_HISTORY_CHARS)}…` : content,
     }));
@@ -107,20 +162,20 @@ function createChat(deps) {
       onToken,
     });
     const clean = reply.trim();
-    if (clean) remember('assistant', clean);
+    if (clean) remember('assistant', clean, lastSources.length ? { sources: lastSources.map((s) => ({ ...s })) } : {});
     return clean;
   }
 
   // What the chat window shows when it opens
   function recent(limit = 40) {
-    return history().slice(-limit).map(({ role, content }) => ({ role, content }));
+    return history().slice(-limit).map(({ role, content, sources }) => (sources ? { role, content, sources } : { role, content }));
   }
 
   function clear() {
     store.set(HISTORY_KEY, []);
   }
 
-  return { send, recent, clear, lastSources: () => lastSources.map((s) => ({ ...s })) };
+  return { send, correct, removeNote, recent, clear, lastSources: () => lastSources.map((s) => ({ ...s })) };
 }
 
 module.exports = { createChat, HISTORY_KEY, CHAT_NUM_CTX, MAX_REPLY_TOKENS, notesBlock };

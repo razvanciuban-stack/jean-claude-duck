@@ -7,8 +7,8 @@ const { createTrayIcon } = require('./src/windows/tray-icon');
 const chatWindow = require('./src/windows/chat-window');
 const { createChat } = require('./src/services/chat');
 const { chatStream } = require('./src/services/ollama');
-const { createVaultMemory } = require('./src/services/vault-memory');
-const { saveMemory } = require('./src/services/memory-notes');
+const { createVaultMemory, INDEXED_DIRS } = require('./src/services/vault-memory');
+const { saveMemory, correctMemory, deleteMemory, emptyTrash, isActiveNote } = require('./src/services/memory-notes');
 const { createVault } = require('./src/learning/vault');
 const systemInfo = require('./src/services/system-info');
 const activityMonitor = require('./src/services/activity-monitor');
@@ -188,6 +188,9 @@ function setupChat() {
     knowledgeFor: (text) => memory.search(text),
     // "ține minte că…" / "remember…" / the Remember button → a note in mysthi/memory/
     saveMemory: (fact) => { chatVault.ensure(); return saveMemory({ vault: chatVault, fact }); },
+    correctMemory: (notePath, fact) => correctMemory({ vault: chatVault, path: notePath, fact }),
+    deleteMemory: (notePath) => deleteMemory({ vault: chatVault, path: notePath }),
+    noteActive: (notePath) => isActiveNote(chatVault, notePath),
     // Her real status, so she never claims to be learning when she isn't
     learningStatus: () => (learning ? learning.statusLabel() : 'Learning: off'),
   });
@@ -200,7 +203,8 @@ function setupChat() {
       const keepIt = !!(opts && opts.remember === true);
       const run = () => chat.send(text, { remember: keepIt, onToken: (piece) => { if (!event.sender.isDestroyed()) event.sender.send('chat:token', piece); } });
       const reply = learning ? await learning.forChat(run) : await run();
-      return { ok: true, reply };
+      // Sources come from the app (the notes actually sent), never from the model's text
+      return { ok: true, reply, sources: chat.lastSources() };
     } catch (err) {
       const offline = /ECONNREFUSED|not found|HTTP 404/i.test(String(err && err.message));
       return { ok: false, error: offline
@@ -210,6 +214,33 @@ function setupChat() {
       isTalking = false;
       updateSlimeState();
     }
+  });
+  // Open a note in your default app (Obsidian): only notes in her folders, after the vault's realpath checks
+  ipcMain.handle('chat:open', async (event, notePath) => {
+    if (!chatWindow.isChatSender(event.sender)) return { ok: false, error: 'Not allowed.' };
+    const p = String(notePath || '');
+    const dir = p.split('/')[0];
+    if (!INDEXED_DIRS.includes(dir) || !p.endsWith('.md') || p.includes('..') || !chatVault.exists(p)) {
+      return { ok: false, error: 'That note is not available.' };
+    }
+    try {
+      const err = await shell.openPath(chatVault.fullPath(p));
+      return err ? { ok: false, error: err } : { ok: true };
+    } catch { return { ok: false, error: 'That note is not available.' }; }
+  });
+  ipcMain.handle('chat:correct', async (event, notePath, text) => {
+    if (!chatWindow.isChatSender(event.sender)) return { ok: false, error: 'Not allowed.' };
+    try {
+      const reply = await chat.correct(String(notePath || ''), String(text || ''));
+      return { ok: true, reply, sources: chat.lastSources() };
+    } catch (err) { return { ok: false, error: String(err && err.message || err) }; }
+  });
+  ipcMain.handle('chat:delete', (event, notePath, opts) => {
+    if (!chatWindow.isChatSender(event.sender)) return { ok: false, error: 'Not allowed.' };
+    try {
+      const res = chat.removeNote(String(notePath || ''), { dropHistory: !!(opts && opts.dropHistory === true) });
+      return { ok: true, message: res.message, dropped: res.dropped };
+    } catch (err) { return { ok: false, error: String(err && err.message || err) }; }
   });
   ipcMain.handle('chat:history', (event) => (chatWindow.isChatSender(event.sender) ? chat.recent() : []));
   ipcMain.handle('chat:clear', (event) => { if (chatWindow.isChatSender(event.sender)) chat.clear(); return true; });
@@ -221,6 +252,28 @@ function setupChat() {
   globalShortcut.register('Alt+CommandOrControl+M', () => chatWindow.open());
 }
 // --- end Chat ---
+
+// Notes you deleted from the chat wait in mysthi/.trash/ until you empty it here
+async function confirmEmptyTrash() {
+  const vault = createVault(VAULT_DIR);
+  const count = vault.list('.trash').filter((f) => f.endsWith('.md')).length;
+  if (!count) {
+    dialog.showMessageBox({ title: 'Mysthi', message: "Mysthi's trash is empty." });
+    return;
+  }
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    title: 'Mysthi',
+    message: `Delete ${count} note${count === 1 ? '' : 's'} in Mysthi's trash for good?`,
+    detail: 'This cannot be undone in the app. Copies may still exist in Time Machine backups, or in Obsidian Sync if you turn it on.',
+    buttons: ['Delete for good', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+  });
+  if (response !== 0) return;
+  const removed = emptyTrash({ vault });
+  dialog.showMessageBox({ title: 'Mysthi', message: `Deleted ${removed} note${removed === 1 ? '' : 's'} for good.` });
+}
 
 // Same menu in the menu bar and when you right-click Mysthi
 function appMenuTemplate() {
@@ -236,6 +289,8 @@ function appMenuTemplate() {
     },
     { type: 'separator' },
     ...learningMenuItems(),
+    { label: "Empty Mysthi's trash…", click: () => confirmEmptyTrash() },
+    { type: 'separator' },
     { label: 'About', click: () => {
       dialog.showMessageBox({ title: 'Mysthi', message: `Mysthi v${app.getVersion()}`, detail: 'A black cat who lives on your desktop and quietly learns how you work.', icon: path.join(__dirname, 'assets', 'icon.png') });
     }},

@@ -14,6 +14,7 @@
       --line: #e2ded6;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    [hidden] { display: none !important; }
     html, body { height: 100%; }
     body {
       display: flex; flex-direction: column;
@@ -46,6 +47,24 @@
     .msg.user { align-self: flex-end; background: var(--ink); color: var(--paper); border-bottom-right-radius: 4px; }
     .msg.assistant { align-self: flex-start; background: var(--card); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
     .msg.error { align-self: center; background: none; color: #a1432f; font-size: 12.5px; text-align: center; }
+    .msg.note { align-self: center; background: none; color: var(--muted); font-size: 12.5px; text-align: center; max-width: 90%; }
+    /* Notes an answer used: small chips under her bubble */
+    .sources { align-self: flex-start; display: flex; flex-wrap: wrap; gap: 6px; max-width: 92%; margin-top: -4px; }
+    .sources .label { font-size: 11.5px; color: var(--muted); padding: 3px 0; }
+    .chip { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; background: var(--card); overflow: hidden; }
+    .chip button { border: none; background: none; font: inherit; font-size: 11.5px; padding: 3px 9px; cursor: pointer; color: var(--ink); }
+    .chip .open { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chip .act { color: var(--muted); border-left: 1px solid var(--line); }
+    .chip button:hover { background: var(--paper); color: var(--ink); }
+    .chip.mine { border-color: #b9b2a6; }
+    .confirm { align-self: flex-start; max-width: 92%; padding: 10px 12px; border: 1px solid #d7b9ae; border-radius: 12px; background: #fbf3ef; font-size: 12.5px; display: flex; flex-direction: column; gap: 8px; }
+    .confirm label { display: flex; gap: 6px; align-items: center; color: var(--ink); }
+    .confirm .row { display: flex; gap: 8px; }
+    .confirm button { border: 1px solid var(--line); border-radius: 8px; background: var(--card); font: inherit; font-size: 12px; padding: 4px 10px; cursor: pointer; }
+    .confirm button.danger { background: #a1432f; border-color: #a1432f; color: #fff; }
+    #mode { display: flex; align-items: center; gap: 8px; padding: 7px 14px; border-top: 1px solid var(--line); background: #fff8e8; font-size: 12.5px; }
+    #mode span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #mode button { border: none; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; }
     .empty { margin: auto; text-align: center; color: var(--muted); font-size: 13px; max-width: 260px; }
 
     /* Three pulsing dots while she thinks */
@@ -86,9 +105,10 @@
     </svg>
     <h1>Mysthi</h1>
     <span class="status" id="status"></span>
-    <button id="clear" title="Forget this conversation">Clear</button>
+    <button id="clear" title="Clear this conversation. Your notes in mysthi/ are kept.">Clear</button>
   </header>
   <main id="messages"></main>
+  <div id="mode" hidden><span id="mode-text"></span><button id="mode-cancel">Cancel</button></div>
   <footer>
     <textarea id="input" rows="1" placeholder="Talk to Mysthi… (start with “remember” to save a note)" autofocus></textarea>
     <button id="keep" disabled title="Save this message as a note in mysthi/memory (Reține)">Remember</button>

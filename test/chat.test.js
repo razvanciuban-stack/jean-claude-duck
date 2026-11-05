@@ -171,3 +171,95 @@ test('she is told she can remember on request', async () => {
   assert.match(request.messages[0].content, /remember/i);
   assert.doesNotMatch(request.messages[0].content, /do not remember chat messages as notes yet/);
 });
+
+// --- Phase 3: sources kept with answers, correct, delete, history filtering ---
+const memNote = (o = {}) => note({ path: 'memory/2026-11-04-release.md', title: 'Release', snippet: 'Release on 20 Nov', source: 'user-explicit', ...o });
+
+test('answers keep their sources in the history, so the window can show them later', async () => {
+  const store = fakeStore();
+  const chat = createChat({ store, stream: async () => 'On 20 Nov', knowledgeFor: () => [memNote()] });
+  await chat.send('when is the release?');
+  assert.deepStrictEqual(chat.recent().at(-1).sources, [{ path: 'memory/2026-11-04-release.md', title: 'Release', source: 'user-explicit' }]);
+  assert.deepStrictEqual(chat.recent()[0].sources, undefined);
+});
+
+test('messages that relied on a deleted or replaced note are left out of what the model sees', async () => {
+  const store = fakeStore();
+  const active = new Set(['memory/2026-11-04-release.md']);
+  let request = null;
+  const chat = createChat({
+    store,
+    stream: async (a) => { request = a; return 'On 20 Nov'; },
+    knowledgeFor: () => [memNote()],
+    saveMemory: (fact) => ({ path: 'memory/2026-11-04-release.md', text: fact, changed: false }),
+    noteActive: (p) => active.has(p),
+  });
+  await chat.send('remember the release is on 20 Nov');
+  await chat.send('when is the release?');
+  active.delete('memory/2026-11-04-release.md');
+  await chat.send('and now?');
+  const seen = request.messages.slice(1).map((m) => m.content).join('\n');
+  assert.doesNotMatch(seen, /20 Nov/);
+  assert.match(seen, /when is the release\?/);
+  assert.strictEqual(chat.recent().filter((m) => /20 Nov/.test(m.content)).length, 3, 'still shown in the window');
+});
+
+test('correct: saves the new version, says what it replaced, and the exchange is linked to the new note', async () => {
+  const calls = [];
+  const chat = createChat({
+    store: fakeStore(),
+    stream: async () => 'x',
+    correctMemory: (p, fact) => { calls.push([p, fact]); return { path: 'memory/2026-11-05-release.md', text: fact, changed: false, replaced: p }; },
+  });
+  const reply = await chat.correct('memory/2026-11-04-release.md', 'Release-ul e pe 27 noiembrie');
+  assert.deepStrictEqual(calls, [['memory/2026-11-04-release.md', 'Release-ul e pe 27 noiembrie']]);
+  assert.match(reply, /memory\/2026-11-05-release\.md/);
+  assert.match(reply, /memory\/2026-11-04-release\.md/);
+  const last = chat.recent().at(-1);
+  assert.deepStrictEqual(last.sources.map((s) => s.path), ['memory/2026-11-05-release.md']);
+});
+
+test('delete: moves the note, can drop the messages about it, and says what may remain elsewhere', async () => {
+  const store = fakeStore();
+  const chat = createChat({
+    store,
+    stream: async (a) => (/release/.test(a.messages.at(-1).content) ? 'On 20 Nov' : 'You are welcome'),
+    knowledgeFor: (q) => (/release/.test(q) ? [memNote()] : []),
+    saveMemory: (fact) => ({ path: 'memory/2026-11-04-release.md', text: fact, changed: false }),
+    deleteMemory: (p) => ({ path: p, trashPath: '.trash/2026-11-04-release.md' }),
+  });
+  await chat.send('remember the release is on 20 Nov');
+  await chat.send('when is the release?');
+  await chat.send('thanks');
+  const res = chat.removeNote('memory/2026-11-04-release.md', { dropHistory: true });
+  assert.match(res.message, /\.trash\/2026-11-04-release\.md/);
+  assert.match(res.message, /Time Machine/);
+  assert.strictEqual(res.dropped, 3, 'the remember exchange and the answer that used it');
+  assert.ok(!JSON.stringify(store.data[HISTORY_KEY]).includes('20 Nov'));
+  assert.ok(chat.recent().some((m) => m.content === 'thanks'));
+});
+
+test('a refused correction or deletion is reported, nothing else changes', async () => {
+  const store = fakeStore();
+  const chat = createChat({
+    store,
+    stream: async () => 'x',
+    correctMemory: () => { throw new Error('Only your own notes (memory/) can be changed here'); },
+    deleteMemory: () => { throw new Error('Only your own notes (memory/) can be changed here'); },
+  });
+  await assert.rejects(chat.correct('lessons/a.md', 'x'), /Only your own notes/);
+  assert.throws(() => chat.removeNote('lessons/a.md'), /Only your own notes/);
+  assert.deepStrictEqual(chat.recent(), []);
+});
+
+test('replies follow your language even without diacritics', async () => {
+  const chat = createChat({
+    store: fakeStore(),
+    stream: async () => 'x',
+    saveMemory: (fact) => ({ path: 'memory/a.md', text: fact, changed: false }),
+    correctMemory: (p, fact) => ({ path: 'memory/b.md', text: fact, changed: false, replaced: p }),
+  });
+  assert.match(await chat.correct('memory/a.md', 'Release-ul a fost mutat pe 27 noiembrie'), /Am corectat/);
+  assert.match(await chat.send('release-ul e pe 27 noiembrie', { remember: true }), /Am notat/);
+  assert.match(await chat.send('the release is on the 27th', { remember: true }), /Noted in/);
+});

@@ -29,7 +29,7 @@ const localDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.ge
 
 // Writes memory/<date>-<slug>.md atomically. Returns { path, text, changed } — text is what was saved,
 // changed is true when redaction hid something (so she can show you what was kept).
-function saveMemory({ vault, fact, now = new Date() }) {
+function saveMemory({ vault, fact, now = new Date(), replaces = null }) {
   const original = String(fact || '').trim();
   if (!original) throw new Error('Nothing to remember');
   const text = redact(original).text.trim();
@@ -46,6 +46,7 @@ function saveMemory({ vault, fact, now = new Date() }) {
     `updated: "${stamp}"`,
     'source: user-explicit',
     'status: active',
+    ...(replaces ? [`replaces: ${JSON.stringify(replaces)}`] : []),
     '---',
     '',
     `# ${title}`,
@@ -57,4 +58,87 @@ function saveMemory({ vault, fact, now = new Date() }) {
   return { path: rel, text, changed: text !== original };
 }
 
-module.exports = { parseRemember, saveMemory };
+// --- Correct, delete, trash. Only your own notes (memory/<file>.md) — lessons are edited in Obsidian. ---
+
+const MEMORY_NOTE = /^memory\/[^/\\]+\.md$/;
+const TRASH = '.trash';
+
+function checkOwnNote(vault, rel) {
+  const p = String(rel || '');
+  if (!MEMORY_NOTE.test(p) || p.includes('..') || vault.isLink(p)) {
+    throw new Error('Only your own notes (memory/) can be changed here');
+  }
+  if (!vault.exists(p)) throw new Error('Note not found');
+  return p;
+}
+
+const statusOf = (md) => ((/^---\n[\s\S]*?^status:\s*"?([a-z-]+)"?\s*$[\s\S]*?^---$/m.exec(md || '') || [])[1] || 'active');
+
+// Set (or add) frontmatter fields, leaving everything else as it was
+function setFields(md, fields) {
+  const m = /^---\n([\s\S]*?)\n---\n?/.exec(md);
+  const lines = m ? m[1].split('\n') : [];
+  for (const [k, v] of Object.entries(fields)) {
+    const line = `${k}: ${v}`;
+    const i = lines.findIndex((l) => l.startsWith(`${k}:`));
+    if (i >= 0) lines[i] = line; else lines.push(line);
+  }
+  const body = m ? md.slice(m[0].length) : md;
+  return `---\n${lines.join('\n')}\n---\n${body}`;
+}
+
+// Is this note still what she should rely on? (gone, deleted or superseded → no)
+function isActiveNote(vault, rel) {
+  if (!vault.exists(rel)) return false;
+  return statusOf(vault.read(rel)) !== 'superseded';
+}
+
+// A new note with the right version; the old one stays as history, marked superseded
+function correctMemory({ vault, path: rel, fact, now = new Date() }) {
+  const p = checkOwnNote(vault, rel);
+  const md = vault.read(p);
+  if (statusOf(md) === 'superseded') throw new Error('This note was already replaced; correct the newest one');
+  const fresh = saveMemory({ vault, fact, now, replaces: p });
+  vault.writeAtomic(p, setFields(md, {
+    status: 'superseded',
+    updated: JSON.stringify(now.toISOString()),
+    superseded_by: JSON.stringify(fresh.path),
+  }));
+  return { ...fresh, replaced: p };
+}
+
+// Moves the note to mysthi/.trash/ (never searched); emptyTrash removes it for good
+// The older versions too (the notes it replaced, and those before them): deleting a fact removes all of it.
+function deleteMemory({ vault, path: rel }) {
+  const p = checkOwnNote(vault, rel);
+  const toTrash = (notePath) => {
+    const name = notePath.slice('memory/'.length, -3);
+    let trashPath = `${TRASH}/${name}.md`;
+    for (let n = 2; vault.exists(trashPath); n++) trashPath = `${TRASH}/${name}-${n}.md`;
+    vault.move(notePath, trashPath);
+    return trashPath;
+  };
+  const older = [];
+  let prev = (/^replaces:\s*"([^"]+)"\s*$/m.exec(vault.read(p) || '') || [])[1];
+  while (prev && !older.includes(prev)) {
+    try { checkOwnNote(vault, prev); } catch { break; }
+    older.push(prev);
+    prev = (/^replaces:\s*"([^"]+)"\s*$/m.exec(vault.read(prev) || '') || [])[1];
+  }
+  const trashPath = toTrash(p);
+  older.forEach(toTrash);
+  return { path: p, trashPath, olderVersions: older.length };
+}
+
+function emptyTrash({ vault }) {
+  let removed = 0;
+  for (const f of vault.list(TRASH)) {
+    const rel = `${TRASH}/${f}`;
+    if (vault.isLink(rel) || !f.endsWith('.md')) continue;
+    vault.remove(rel);
+    removed++;
+  }
+  return removed;
+}
+
+module.exports = { parseRemember, saveMemory, correctMemory, deleteMemory, emptyTrash, isActiveNote };

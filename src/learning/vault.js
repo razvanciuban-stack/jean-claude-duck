@@ -106,7 +106,28 @@ function createVault(rootDir = VAULT_DIR) {
     return out;
   }
 
-  return { ensure, writeAtomic, read, exists, list, mtime, loadDoNotWatch };
+  // The file itself is a symbolic link (checked without following it)
+  function isLink(relPath) {
+    try { return fs.lstatSync(resolve(relPath)).isSymbolicLink(); } catch { return false; }
+  }
+
+  // Rename within the vault; both ends pass the same checks as every other access
+  function move(fromRel, toRel) {
+    const from = resolve(fromRel);
+    const to = resolve(toRel);
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.renameSync(from, to);
+  }
+
+  // Delete one file for good (used only to empty Mysthi's trash)
+  function remove(relPath) {
+    fs.unlinkSync(resolve(relPath));
+  }
+
+  // Absolute path for opening a note in another app (same checks)
+  const fullPath = (relPath) => resolve(relPath);
+
+  return { ensure, writeAtomic, read, exists, list, mtime, loadDoNotWatch, isLink, move, remove, fullPath };
 }
 
 module.exports = { createVault };
