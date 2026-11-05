@@ -6,6 +6,9 @@ const { pointAt, edgeRange, route, toLocal, spans } = require('./perimeter');
 const store = new Store();
 
 const SIZE = 180;          // square window, so Mysthi can turn onto walls and the ceiling inside it
+// Off for now: she stays where she is, front-on (the side-on walk drawing is kept in mysthi.js for later).
+// Dragging her by hand still works.
+const WANDERING = false;
 const SPEED = 1.4;         // px per frame — a calm cat stroll; mysthi.js times her steps to this
 const FRAME_MS = 33;       // ~30 fps movement
 const FLOOR_NUDGE = 10;    // px lower on the floor, so her paws sit right on the dock edge
@@ -167,7 +170,7 @@ function pickTarget(area, edge) {
 }
 
 function scheduleNextWander() {
-  if (wanderPaused || isDragging) return;
+  if (!WANDERING || wanderPaused || isDragging) return;
   if (wanderTimer) clearTimeout(wanderTimer);
 
   // A cat mostly stays put on the floor (30-90 s); clinging to a wall or the ceiling she soon heads down (5-15 s)
