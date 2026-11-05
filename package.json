@@ -8,7 +8,8 @@
     "test": "node --test test/",
     "build": "npm run build:helper && electron-builder --mac",
     "build:helper": "swift build -c release --package-path native/mysthi-helper",
-    "build:dmg": "npm run build:helper && electron-builder --mac dmg"
+    "build:dmg": "npm run build:helper && electron-builder --mac dmg",
+    "eval:chat": "node scripts/chat-eval.js"
   },
   "build": {
     "productName": "Mysthi",

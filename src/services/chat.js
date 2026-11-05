@@ -1,13 +1,15 @@
 // chat.js — talking with Mysthi: replies stream from the one local model; the conversation is kept, redacted
 const { TEXT_MODEL, LEARNING_NUM_CTX } = require('../learning/config');
 const { redact } = require('../learning/redact');
-const { buildSystemPrompt } = require('./personality');
+const { buildSystemPrompt, detectLanguage } = require('./personality');
 const { parseRemember } = require('./memory-notes');
 
 const HISTORY_KEY = 'mysthiChat'; // a fresh history: the old duck-era chat stays untouched until it's cleaned up
 const MAX_STORED = 200;           // messages kept across sessions
 const CONTEXT_MESSAGES = 16;      // most recent messages sent with each question
 const MAX_REPLY_TOKENS = 600;
+// A little below the model's default: still warm, but less likely to make things up
+const CHAT_TEMPERATURE = 0.4;
 // Model memory per question, set explicitly so nothing is cut off silently: system prompt + note excerpts
 // (≤3000 chars) + 16 recent messages + the reply fit comfortably (checked by a test). Same size as the
 // learning calls on purpose: Ollama reloads the model whenever the context size changes between requests.
@@ -21,6 +23,18 @@ const LABEL = {
   'user-explicit': 'the user told you this',
   'screen-derived': 'you observed this on their screen; it may be incomplete or wrong',
 };
+
+// The window shows plain text: drop markdown the model adds anyway (bold, headings, code, links → their text).
+// Numbered steps stay; they read fine as text.
+function plainText(text) {
+  return String(text)
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/(\*\*|__)(.+?)\1/g, '$2')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/`+([^`]*)`+/g, '$1')
+    .replace(/\*\*|__/g, '')
+    .trim();
+}
 
 // Notes go into the prompt inside clear markers, labelled as information — never instructions
 function notesBlock(notes) {
@@ -52,9 +66,8 @@ function createChat(deps) {
 
   const refsOf = (m) => [...(m.notes || []), ...(m.sources || []).map((s) => s.path)];
   const stillTrue = (m) => refsOf(m).every((p) => { try { return noteActive(p); } catch { return true; } });
-  // Romanian if it has ă/â/î/ș/ț, or at least two common Romanian words (many people type without diacritics)
-  const RO_WORDS = /\b(si|ca|este|sunt|e|pe|cu|nu|la|din|de|fost|am|ai|sa|mai|care|cand|unde|mutat|noiembrie|luni|marti|vineri)\b/gi;
-  const isRo = (text) => /[ăâîșțşţ]/i.test(text) || (String(text).match(RO_WORDS) || []).length >= 2;
+  // Romanian if it has ă/â/î/ș/ț or more common Romanian words than English ones (many type without diacritics)
+  const isRo = (text) => detectLanguage(text) === 'ro';
   const shortTitle = (text) => (text.length > 60 ? `${text.slice(0, 59).trimEnd()}…` : text);
 
   const safeStatus = () => { try { return String(learningStatus() || ''); } catch { return ''; } };
@@ -153,15 +166,15 @@ function createChat(deps) {
       model: TEXT_MODEL,
       think: false,
       messages: [
-        { role: 'system', content: buildSystemPrompt({ now: now(), knowledge, learning: safeStatus() }) },
+        { role: 'system', content: buildSystemPrompt({ now: now(), knowledge, learning: safeStatus(), lang: detectLanguage(question) }) },
         ...context,
         { role: 'user', content: question },
       ],
-      options: { num_predict: MAX_REPLY_TOKENS, num_ctx: CHAT_NUM_CTX },
+      options: { num_predict: MAX_REPLY_TOKENS, num_ctx: CHAT_NUM_CTX, temperature: CHAT_TEMPERATURE },
       timeoutMs: SILENCE_TIMEOUT_MS,
       onToken,
     });
-    const clean = reply.trim();
+    const clean = plainText(reply);
     if (clean) remember('assistant', clean, lastSources.length ? { sources: lastSources.map((s) => ({ ...s })) } : {});
     return clean;
   }
@@ -178,4 +191,4 @@ function createChat(deps) {
   return { send, correct, removeNote, recent, clear, lastSources: () => lastSources.map((s) => ({ ...s })) };
 }
 
-module.exports = { createChat, HISTORY_KEY, CHAT_NUM_CTX, MAX_REPLY_TOKENS, notesBlock };
+module.exports = { createChat, HISTORY_KEY, CHAT_NUM_CTX, MAX_REPLY_TOKENS, notesBlock, plainText };

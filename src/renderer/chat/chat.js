@@ -47,11 +47,23 @@ function thinkingBubble() {
 
 const isMine = (s) => s && s.source === 'user-explicit' && /^memory\/[^/]+\.md$/.test(s.path);
 
-// Chips for the notes an answer used, placed right after its bubble
+// Chips for the notes an answer used, placed right after its bubble. Grouped by where each note came from,
+// as the app knows it: what you told her, and what she noticed on your screen (which may be wrong).
 function showSources(after, sources) {
   if (!sources || !sources.length) return;
   const row = el('div', 'sources');
-  row.appendChild(el('span', 'label', 'From:'));
+  const told = sources.filter((s) => s && s.source === 'user-explicit');
+  const seen = sources.filter((s) => s && s.source !== 'user-explicit');
+  for (const [label, group] of [['You told me:', told], ['I noticed:', seen]]) {
+    if (!group.length) continue;
+    row.appendChild(el('span', 'label', label));
+    addChips(row, group);
+  }
+  after.after(row);
+  scrollDown();
+}
+
+function addChips(row, sources) {
   for (const s of sources) {
     const chip = el('span', isMine(s) ? 'chip mine' : 'chip');
     const open = el('button', 'open', s.title || s.path);
@@ -72,8 +84,6 @@ function showSources(after, sources) {
     }
     row.appendChild(chip);
   }
-  after.after(row);
-  scrollDown();
 }
 
 function startCorrecting(s) {
