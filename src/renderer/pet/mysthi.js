@@ -27,17 +27,23 @@ const SIT_POSE = `
   </g>
 `;
 
+// Side-on walk, facing right. Low, long cat profile: deep chest, soft back line, belly tucked up to a round
+// haunch; head carried forward at shoulder height and turned three-quarters to you; tail up in a soft S.
 const WALK_POSE = `
   <g class="far-legs"></g>
   <g class="walk-body">
-    <path class="walk-tail" d="M50 140 C 26 132, 18 104, 28 82 C 33 72, 42 70, 44 78" fill="none" stroke="#111" stroke-width="10" stroke-linecap="round"/>
-    <path d="M48 152 C 40 128, 66 118, 100 120 C 126 121, 142 116, 154 124 C 166 134, 162 160, 142 164 L 72 166 C 58 166, 50 160, 48 152 Z" fill="#111"/>
+    <path class="walk-tail" d="M58 168 C 36 166, 24 148, 28 124 C 31 106, 40 96, 50 100 C 56 103, 54 112, 48 112" fill="none" stroke="#111" stroke-width="9" stroke-linecap="round"/>
+    <path d="M62 172 C 46 164, 46 142, 64 138 C 80 135, 96 142, 112 141 C 124 140, 130 132, 142 132 C 156 132, 166 142, 166 156 C 167 172, 160 186, 146 190 C 128 194, 112 187, 98 187 C 86 187, 74 187, 62 172 Z" fill="#111"/>
+    <ellipse cx="72" cy="168" rx="22" ry="19" fill="#111"/>
+    <path d="M60 182 C 66 188, 76 189, 84 184" fill="none" stroke="${LINE}" stroke-width="1.8" stroke-linecap="round"/>
     <g class="walk-head">
-      <path d="M140 92 L 142 56 L 162 76 Z M166 74 L 184 54 L 188 90 Z" fill="#111" stroke="#111" stroke-width="7" stroke-linejoin="round"/>
-      <ellipse cx="164" cy="104" rx="30" ry="26" fill="#111"/>
-      <path d="M180 112 L 206 106 M180 116 L 208 118" stroke="#8a8a8a" stroke-width="1.4" stroke-linecap="round"/>
-      <circle cx="160" cy="100" r="10.5" fill="#fff"/><circle cx="181" cy="99" r="9" fill="#fff"/>
-      <circle cx="164" cy="100" r="4.2" fill="#111"/><circle cx="184.5" cy="99" r="3.8" fill="#111"/>
+      <path d="M150 140 L 154 108 L 172 128 Z" fill="#111" stroke="#111" stroke-width="4" stroke-linejoin="round"/>
+      <path d="M180 126 L 196 110 L 198 142 Z" fill="#1c1c1c" stroke="#1c1c1c" stroke-width="4" stroke-linejoin="round"/>
+      <ellipse cx="174" cy="153" rx="28" ry="24" fill="#111"/>
+      <ellipse cx="196" cy="163" rx="10" ry="8" fill="#111"/>
+      <path d="M192 164 L 216 158 M192 168 L 218 170 M190 172 L 212 180" stroke="#8a8a8a" stroke-width="1.4" stroke-linecap="round"/>
+      <circle cx="168" cy="150" r="11.5" fill="#fff"/><circle cx="190" cy="149" r="9" fill="#fff"/>
+      <circle cx="172" cy="150" r="4.8" fill="#111"/><circle cx="193" cy="149" r="3.8" fill="#111"/>
     </g>
   </g>
   <g class="near-legs"></g>
@@ -178,24 +184,27 @@ function playFlourish(svg, name, ms = 900) {
   setTimeout(() => svg.classList.remove(name), ms);
 }
 
-// --- Side-on walk: four two-segment legs solved with simple IK, cat walk order ---
+// --- Side-on walk: four two-segment legs solved with simple IK, cat walk order (hind, front, other hind, other front) ---
+// Front legs bend at the wrist (joint forward); hind legs bend at the hock (joint backward), like a real cat.
 
-const GROUND = 229, UPPER = 31, LOWER = 31, STRIDE = 40, LIFT = 10, STANCE = 0.6, DROP = 18;
+const GROUND = 229, STRIDE = 34, LIFT = 9, STANCE = 0.62;
 const STEPS_PER_SECOND = 2.1; // matches the window's stroll speed so paws barely slide
 
 function createWalkCycle(walk) {
   const legSpecs = [
-    { hip: 66, hipY: 168, off: 0.0, near: true, front: false },
-    { hip: 138, hipY: 166, off: 0.25, near: true, front: true },
-    { hip: 74, hipY: 168, off: 0.5, near: false, front: false },
-    { hip: 146, hipY: 166, off: 0.75, near: false, front: true },
-  ];
+    { hip: 76, hipY: 180, off: 0.0, near: true, front: false },
+    { hip: 148, hipY: 182, off: 0.25, near: true, front: true },
+    { hip: 84, hipY: 178, off: 0.5, near: false, front: false },
+    { hip: 156, hipY: 180, off: 0.75, near: false, front: true },
+  ].map((l) => ({ ...l, upper: l.front ? 25 : 27, lower: l.front ? 24 : 24, bend: l.front ? 1 : -1 }));
   const legs = legSpecs.map((l) => {
-    const colour = l.near ? '#111' : '#2a2a2a';
+    const colour = l.near ? '#111' : '#2c2c2c';
     const g = el('g', {}, walk.querySelector(l.near ? '.near-legs' : '.far-legs'));
-    const path = el('path', { fill: 'none', stroke: colour, 'stroke-width': l.front ? 9 : 11, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, g);
-    const paw = el('ellipse', { rx: 6.5, ry: 4, fill: colour }, g);
-    return { ...l, path, paw };
+    // Thicker at the top, thinner at the paw: two strokes
+    const top = el('path', { fill: 'none', stroke: colour, 'stroke-width': l.front ? 11 : 13, 'stroke-linecap': 'round' }, g);
+    const low = el('path', { fill: 'none', stroke: colour, 'stroke-width': l.front ? 8 : 8.5, 'stroke-linecap': 'round' }, g);
+    const paw = el('ellipse', { rx: 7, ry: 4.2, fill: colour }, g);
+    return { ...l, top, low, paw };
   });
   const body = walk.querySelector('.walk-body');
   const head = walk.querySelector('.walk-head');
@@ -207,28 +216,32 @@ function createWalkCycle(walk) {
     const s = (t - STANCE) / (1 - STANCE);
     return { x: l.hip - STRIDE / 2 + STRIDE * ease(s), y: GROUND - Math.sin(Math.PI * s) * LIFT };
   };
-  const knee = (hx, hy, fx, fy) => {
+  // Joint between hip and paw; bend +1 puts it in front of the line (wrist), -1 behind it (hock)
+  const joint = (l, hx, hy, fx, fy) => {
     const dx = fx - hx, dy = fy - hy;
-    const d = Math.min(Math.hypot(dx, dy), UPPER + LOWER - 0.5);
-    const a = (UPPER * UPPER - LOWER * LOWER + d * d) / (2 * d);
-    const h = Math.sqrt(Math.max(0, UPPER * UPPER - a * a));
+    const d = Math.min(Math.hypot(dx, dy), l.upper + l.lower - 0.5);
+    const a = (l.upper * l.upper - l.lower * l.lower + d * d) / (2 * d);
+    const h = Math.sqrt(Math.max(0, l.upper * l.upper - a * a));
     const ux = dx / d, uy = dy / d;
-    return { x: hx + ux * a + uy * h, y: hy + uy * a - ux * h }; // joint bends backward
+    return { x: hx + ux * a - l.bend * uy * h, y: hy + uy * a + l.bend * ux * h };
   };
 
   let phase = 0, raf = null, last = 0;
   function draw() {
-    const bob = Math.sin(phase * Math.PI * 4) * 1.6;
-    body.setAttribute('transform', `translate(0 ${(DROP + bob).toFixed(2)})`);
-    head.setAttribute('transform', `translate(0 ${(Math.sin(phase * Math.PI * 4 - 0.6) * 1.2).toFixed(2)})`);
-    tail.setAttribute('transform', `rotate(${(Math.sin(phase * Math.PI * 2) * 6).toFixed(2)} 50 140)`);
+    // Shoulders and hips rise a little as each leg passes under them; the head stays almost level
+    const bob = Math.sin(phase * Math.PI * 4) * 1.4;
+    body.setAttribute('transform', `translate(0 ${bob.toFixed(2)})`);
+    head.setAttribute('transform', `translate(0 ${(-bob * 0.6).toFixed(2)})`);
+    tail.setAttribute('transform', `rotate(${(Math.sin(phase * Math.PI * 2) * 7).toFixed(2)} 58 168)`);
     for (const l of legs) {
       const t = ((phase + l.off) % 1 + 1) % 1;
       const f = footAt(l, t), hy = l.hipY + bob;
-      const k = knee(l.hip, hy, f.x, f.y - 3);
-      l.path.setAttribute('d', `M${l.hip} ${hy.toFixed(1)} L${k.x.toFixed(1)} ${k.y.toFixed(1)} L${f.x.toFixed(1)} ${(f.y - 3).toFixed(1)}`);
+      const fy = f.y - 4;
+      const k = joint(l, l.hip, hy, f.x, fy);
+      l.top.setAttribute('d', `M${l.hip} ${hy.toFixed(1)} L${k.x.toFixed(1)} ${k.y.toFixed(1)}`);
+      l.low.setAttribute('d', `M${k.x.toFixed(1)} ${k.y.toFixed(1)} L${f.x.toFixed(1)} ${fy.toFixed(1)}`);
       l.paw.setAttribute('cx', (f.x + 3).toFixed(1));
-      l.paw.setAttribute('cy', (f.y - 2).toFixed(1));
+      l.paw.setAttribute('cy', (f.y - 2.5).toFixed(1));
     }
   }
   function frame(now) {
@@ -242,6 +255,8 @@ function createWalkCycle(walk) {
   return {
     start() { if (!raf) { last = performance.now(); raf = requestAnimationFrame(frame); } },
     stop() { if (raf) { cancelAnimationFrame(raf); raf = null; } },
+    // For previews: draw one moment of the cycle
+    pose(p) { phase = p; draw(); },
   };
 }
 
