@@ -34,11 +34,14 @@ const SIT_POSE = `
 const WALK_POSE = `
   <g class="far-legs"></g>
   <g class="walk-body">
-    <path class="walk-tail" d="M74 150 C 54 156, 38 178, 32 192 C 28 202, 20 206, 13 200" fill="none" stroke="#111" stroke-width="7" stroke-linecap="round"/>
-    <path d="M70 156 C 68 146, 76 138, 90 137 C 106 137, 124 144, 140 141 C 150 139, 158 140, 164 146 C 170 154, 170 168, 164 176 C 158 184, 148 186, 140 184 C 126 180, 112 178, 102 180 C 92 182, 82 184, 76 178 C 70 172, 70 164, 70 156 Z" fill="#111"/>
-    <path d="M72 150 C 80 142, 98 144, 104 156 C 108 168, 100 180, 90 184 C 80 186, 72 178, 70 168 C 69 161, 69 155, 72 150 Z" fill="#111"/>
-    <path d="M146 144 C 160 136, 176 134, 188 138 L 194 160 C 184 168, 170 174, 160 178 Z" fill="#111"/>
-    <g class="walk-head"><g transform="translate(192 146) scale(1.05) translate(-184 -137)">
+    <g class="walk-tail">
+      <path class="tail-line" d="M76 148 C 54 154, 40 170, 34 188 C 30 200, 24 207, 16 205 C 9 203, 7 196, 12 191" fill="none" stroke="none"/>
+      <path class="tail-shape" fill="#111" stroke="#111" stroke-width="1.5" stroke-linejoin="round"/>
+    </g>
+    <path d="M72 150 C 70 138, 80 130, 94 131 C 108 132, 118 140, 128 140 C 138 140, 146 132, 156 134 C 166 136, 172 148, 170 160 C 168 170, 160 176, 150 176 C 136 176, 124 166, 112 165 C 102 164, 96 170, 88 172 C 78 174, 72 164, 72 150 Z" fill="#111"/>
+    <path d="M74 146 C 82 134, 100 136, 106 148 C 110 160, 104 174, 94 178 C 84 181, 76 173, 73 163 Z" fill="#111"/>
+    <path d="M150 138 C 162 132, 176 132, 188 136 L 194 156 C 184 164, 172 168, 162 170 Z" fill="#111"/>
+    <g class="walk-head"><g transform="translate(192 141) scale(1.05) translate(-184 -137)">
       <path d="M166 128 L 170 102 L 182 124 Z" fill="#111" stroke="#111" stroke-width="3" stroke-linejoin="round"/>
       <path d="M180 126 L 191 104 L 194 130 Z" fill="#111" stroke="#111" stroke-width="3" stroke-linejoin="round"/>
       <path d="M184 124 L 190 111 L 191 127 Z" fill="#3a3a3a"/>
@@ -192,19 +195,19 @@ function playFlourish(svg, name, ms = 900) {
 // --- Side-on walk: four two-segment legs solved with simple IK, cat walk order (hind, front, other hind, other front) ---
 // Front legs bend at the wrist (joint forward); hind legs bend at the hock (joint backward), like a real cat.
 
-const GROUND = 229, STRIDE = 36, LIFT = 9, STANCE = 0.62;
+const GROUND = 229, STRIDE = 42, LIFT = 12, STANCE = 0.6;
 const STEPS_PER_SECOND = 2.1; // matches the window's stroll speed so paws barely slide
 
 function createWalkCycle(walk) {
   const legSpecs = [
-    { hip: 86, hipY: 170, off: 0.0, near: true, front: false },
-    { hip: 150, hipY: 176, off: 0.25, near: true, front: true },
-    { hip: 94, hipY: 168, off: 0.5, near: false, front: false },
-    { hip: 157, hipY: 174, off: 0.75, near: false, front: true },
+    { hip: 92, hipY: 170, off: 0.0, near: true, front: false },
+    { hip: 154, hipY: 170, off: 0.25, near: true, front: true },
+    { hip: 100, hipY: 168, off: 0.5, near: false, front: false },
+    { hip: 161, hipY: 168, off: 0.75, near: false, front: true },
   ].map((l) => ({
     ...l,
-    upper: l.front ? 26 : 30, lower: l.front ? 26 : 28, bend: l.front ? 1 : -1,
-    widths: l.front ? [14, 7, 6] : [19, 8, 6], // at the body, at the joint, at the paw
+    upper: l.front ? 29 : 32, lower: l.front ? 28 : 30, bend: l.front ? 1 : -1,
+    widths: l.front ? [12, 6.5, 5.5] : [16, 7, 5.5], // at the body, at the joint, at the paw
   }));
   const legs = legSpecs.map((l) => {
     const colour = l.near ? '#111' : '#333';
@@ -212,7 +215,7 @@ function createWalkCycle(walk) {
     // Thicker at the top, thinner at the paw: two strokes
     // One tapered shape per leg; a thin outline in the same colour rounds the joints
     const shape = el('path', { fill: colour, stroke: colour, 'stroke-width': 2, 'stroke-linejoin': 'round' }, g);
-    const paw = el('ellipse', { rx: 6.5, ry: 3.8, fill: colour }, g);
+    const paw = el('ellipse', { rx: 6, ry: 3.4, fill: colour }, g);
     return { ...l, shape, paw };
   });
   const body = walk.querySelector('.walk-body');
@@ -246,13 +249,28 @@ function createWalkCycle(walk) {
     return 'M' + [...left, ...right].map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L') + ' Z';
   };
 
+  // Tail: one shape tapering from the body to a rounded tip, built along its centre line
+  const tailLine = walk.querySelector('.tail-line');
+  const tailShape = walk.querySelector('.tail-shape');
+  try {
+    const total = tailLine.getTotalLength();
+    const pts = [], widths = [];
+    for (let i = 0; i <= 28; i++) {
+      const p = tailLine.getPointAtLength((total * i) / 28);
+      pts.push({ x: p.x, y: p.y });
+      widths.push(10 - 6 * (i / 28));
+    }
+    tailShape.setAttribute('d', legOutline(pts, widths));
+    el('circle', { cx: pts[pts.length - 1].x, cy: pts[pts.length - 1].y, r: 2, fill: '#111' }, tailShape.parentNode);
+  } catch { tailLine.setAttribute('stroke', '#111'); tailLine.setAttribute('stroke-width', '6'); tailLine.setAttribute('stroke-linecap', 'round'); }
+
   let phase = 0, raf = null, last = 0;
   function draw() {
     // Shoulders and hips rise a little as each leg passes under them; the head stays almost level
     const bob = Math.sin(phase * Math.PI * 4) * 1.4;
     body.setAttribute('transform', `translate(0 ${bob.toFixed(2)})`);
     head.setAttribute('transform', `translate(0 ${(-bob * 0.6).toFixed(2)})`);
-    tail.setAttribute('transform', `rotate(${(Math.sin(phase * Math.PI * 2) * 5).toFixed(2)} 74 150)`);
+    tail.setAttribute('transform', `rotate(${(Math.sin(phase * Math.PI * 2) * 5).toFixed(2)} 76 148)`);
     for (const l of legs) {
       const t = ((phase + l.off) % 1 + 1) % 1;
       const f = footAt(l, t), hy = l.hipY + bob;
