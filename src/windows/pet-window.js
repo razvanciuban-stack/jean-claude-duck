@@ -69,14 +69,19 @@ function create() {
     resizable: false,
     hasShadow: false,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+      preload: path.join(__dirname, '..', 'renderer', 'pet', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
     },
   });
 
   loopS = start;
   currentEdge = p.edge;
   petWindow.setIgnoreMouseEvents(true, { forward: true });
+  // Her page may never navigate or open windows
+  petWindow.webContents.on('will-navigate', (e) => e.preventDefault());
+  petWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   petWindow.loadFile(path.join(__dirname, '..', 'renderer', 'pet', 'index.html'));
   petWindow.webContents.on('did-finish-load', () => send('pet:edge', { edge: currentEdge }));
 

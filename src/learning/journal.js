@@ -3,6 +3,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { redact, redactDeep } = require('./redact');
+const { JOURNAL_RETENTION_DAYS } = require('./config');
+
+const DAY_FILE = /^steps-(\d{4})-(\d{2})-(\d{2})\.jsonl$/;
 
 function dayStamp(ts) {
   const d = new Date(ts);
@@ -10,7 +13,8 @@ function dayStamp(ts) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-function createJournal(dir) {
+// retentionDays: days of steps kept on disk; older day files are deleted (on start and on each new day)
+function createJournal(dir, { retentionDays = JOURNAL_RETENTION_DAYS, now = Date.now } = {}) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   try { fs.chmodSync(dir, 0o700); } catch { /* best effort */ }
   const statePath = path.join(dir, 'state.json');
@@ -39,18 +43,48 @@ function createJournal(dir) {
     // secret (e.g. 'mw24kjt00002' matches the IBAN pattern): keep it, or every step would share '[IBAN]'
     safe.id = step.id;
     safe.redactions = step.redactions || [];
-    appendLine(path.join(dir, `steps-${dayStamp(Date.now())}.jsonl`), safe);
+    const file = path.join(dir, `steps-${dayStamp(now())}.jsonl`);
+    if (!fs.existsSync(file)) prune(); // first step of a new day
+    appendLine(file, safe);
+  }
+
+  const dayFiles = () => fs.readdirSync(dir).filter((f) => DAY_FILE.test(f));
+
+  // Delete day files older than the retention; returns how many were removed
+  function prune() {
+    const days = Number(retentionDays);
+    if (!(days > 0)) return 0;
+    const today = new Date(now());
+    const cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate() - days).getTime();
+    let removed = 0;
+    for (const f of dayFiles()) {
+      const [, y, m, d] = DAY_FILE.exec(f);
+      if (new Date(Number(y), Number(m) - 1, Number(d)).getTime() < cutoff) {
+        try { fs.unlinkSync(path.join(dir, f)); removed++; } catch { /* already gone */ }
+      }
+    }
+    return removed;
+  }
+
+  // "Delete all": every recorded step and the processing cursor. Returns how many day files were removed.
+  function clear() {
+    let removed = 0;
+    for (const f of dayFiles()) {
+      try { fs.unlinkSync(path.join(dir, f)); removed++; } catch { /* already gone */ }
+    }
+    try { fs.unlinkSync(statePath); } catch { /* none yet */ }
+    return removed;
   }
 
   function attachDescription(stepId, text) {
-    appendLine(path.join(dir, `steps-${dayStamp(Date.now())}.jsonl`), {
+    appendLine(path.join(dir, `steps-${dayStamp(now())}.jsonl`), {
       patch: stepId,
       description: redact(String(text)).text
     });
   }
 
   function readAll() {
-    const files = fs.readdirSync(dir).filter((f) => /^steps-.*\.jsonl$/.test(f)).sort();
+    const files = dayFiles().sort();
     const steps = [];
     const byId = new Map();
     const patches = [];
@@ -92,7 +126,7 @@ function createJournal(dir) {
     }
   }
 
-  return { append, readSince, markProcessed, lastProcessed, attachDescription };
+  return { append, readSince, markProcessed, lastProcessed, attachDescription, prune, clear };
 }
 
 module.exports = { createJournal };

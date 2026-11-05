@@ -1,7 +1,7 @@
 {
   "name": "jean-claude-duck",
   "version": "0.2.0",
-  "description": "Mysthi \u2014 a black cat desktop pet that quietly learns how you work",
+  "description": "Mysthi — a black cat desktop pet that quietly learns how you work",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -64,7 +64,6 @@
     "electron-builder": "^25.1.8"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
     "electron-store": "^8.2.0"
   }
 }

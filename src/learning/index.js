@@ -13,7 +13,7 @@ const { createVault } = require('./vault');
 const { createPipeline, readWeek, writeWeek } = require('./pipeline');
 const { maybeWriteWeeklyReport } = require('./reports');
 const { isAvailable } = require('../services/ollama');
-const { TEXT_MODEL, VAULT_DIR, IDLE_THRESHOLD_MS } = require('./config');
+const { TEXT_MODEL, VAULT_DIR, IDLE_THRESHOLD_MS, JOURNAL_RETENTION_DAYS } = require('./config');
 
 const STORE_KEY = 'learning.enabled';
 const TICK_MS = 60000;
@@ -216,7 +216,8 @@ function createLearning({
 
   function startRuntime() {
     reloadPolicy();
-    journal = createJournal(stateDir);
+    journal = createJournal(stateDir, { retentionDays: retentionDays(), now: d.now });
+    try { const n = journal.prune(); if (n) logEvent(`removed ${n} day(s) of screen journal older than ${retentionDays()} days`); } catch { /* next day */ }
     pipeline = d.createPipeline({ journal, vault, stateDir, now: d.now, getIdleMs: d.getIdleMs, isEnabled: () => enabled });
     contextAllowed = true;
     recorder = createStepRecorder({
@@ -403,6 +404,21 @@ function createLearning({
     }
   }
 
+  // Days of screen journal kept (store key journalRetentionDays, default 30)
+  function retentionDays() {
+    const v = Number(store.get('journalRetentionDays', JOURNAL_RETENTION_DAYS));
+    return v > 0 ? v : JOURNAL_RETENTION_DAYS;
+  }
+
+  // "Delete all": every recorded step on disk. Not while notes are being made from them.
+  function clearJournal() {
+    if (makingNotes) return { result: 'busy' };
+    const j = journal || createJournal(stateDir, { retentionDays: retentionDays(), now: d.now });
+    const removed = j.clear();
+    logEvent(`screen journal deleted by the user (${removed} day file(s))`);
+    return { result: 'cleared', removed };
+  }
+
   // App quit: stop the helper without changing the persisted on/off choice
   function shutdown() {
     stopRuntime();
@@ -414,6 +430,7 @@ function createLearning({
     disable,
     togglePause,
     makeNotesNow,
+    clearJournal,
     forChat,
     isMakingNotes: () => makingNotes,
     tick,

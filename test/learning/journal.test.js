@@ -88,3 +88,63 @@ test('step ids are never redacted, even when they look like a secret', () => {
   assert.strictEqual(steps[1].value, '[IBAN]', 'real secrets are still scrubbed');
   assert.deepStrictEqual(journal.readSince('mw24kjt00002').map((s) => s.id), ['mw24kjt00003']);
 });
+
+// --- Phase 6: retention and "delete all" ---
+const DAY = 86400000;
+const at = (y, m, d) => new Date(y, m - 1, d, 12).getTime();
+function seedDay(dir, stamp) { fs.writeFileSync(path.join(dir, `steps-${stamp}.jsonl`), JSON.stringify(step(`id-${stamp}`)) + '\n'); }
+
+test('days older than the retention are deleted; recent days and other files stay', () => {
+  const dir = path.join(tmp(), 'learning');
+  let clock = at(2026, 11, 5);
+  const j = createJournal(dir, { retentionDays: 30, now: () => clock });
+  for (const s of ['2026-09-01', '2026-10-05', '2026-10-06', '2026-11-04']) seedDay(dir, s);
+  fs.writeFileSync(path.join(dir, 'weekly.json'), '{}');
+  assert.strictEqual(j.prune(), 2);
+  assert.deepStrictEqual(fs.readdirSync(dir).filter((f) => f.startsWith('steps-')).sort(), ['steps-2026-10-06.jsonl', 'steps-2026-11-04.jsonl']);
+  assert.ok(fs.existsSync(path.join(dir, 'weekly.json')));
+});
+
+test('the first step of a new day prunes old days on its own', () => {
+  const dir = path.join(tmp(), 'learning');
+  const clock = at(2026, 11, 5);
+  const j = createJournal(dir, { retentionDays: 7, now: () => clock });
+  seedDay(dir, '2026-10-01');
+  j.append(step('n1'));
+  assert.ok(!fs.existsSync(path.join(dir, 'steps-2026-10-01.jsonl')));
+  assert.deepStrictEqual(j.readSince(null).map((s) => s.id), ['n1']);
+});
+
+test('after pruning, processing continues with the steps that are left', () => {
+  const dir = path.join(tmp(), 'learning');
+  const j = createJournal(dir, { retentionDays: 30, now: () => at(2026, 11, 5) });
+  seedDay(dir, '2026-09-01');
+  seedDay(dir, '2026-11-04');
+  j.markProcessed('id-2026-09-01');
+  j.prune();
+  assert.deepStrictEqual(j.readSince(j.lastProcessed()).map((s) => s.id), ['id-2026-11-04']);
+});
+
+test('clear deletes every day and the processing cursor', () => {
+  const dir = path.join(tmp(), 'learning');
+  const j = createJournal(dir);
+  j.append(step('c1'));
+  j.markProcessed('c1');
+  seedDay(dir, '2026-10-01');
+  fs.writeFileSync(path.join(dir, 'events.log'), 'x');
+  assert.strictEqual(j.clear(), 2);
+  assert.deepStrictEqual(j.readSince(null), []);
+  assert.strictEqual(j.lastProcessed(), null);
+  assert.ok(fs.existsSync(path.join(dir, 'events.log')), 'the on/off event log is not screen data');
+});
+
+test('learning.clearJournal deletes the recorded steps', () => {
+  const { createLearning } = require('../../src/learning/index');
+  const userDataDir = tmp();
+  const dir = path.join(userDataDir, 'learning');
+  fs.mkdirSync(dir, { recursive: true });
+  seedDay(dir, '2026-11-04');
+  const learning = createLearning({ userDataDir, helperPath: '/nonexistent', vaultDir: path.join(userDataDir, 'vault') });
+  assert.deepStrictEqual(learning.clearJournal(), { result: 'cleared', removed: 1 });
+  assert.ok(!fs.existsSync(path.join(dir, 'steps-2026-11-04.jsonl')));
+});

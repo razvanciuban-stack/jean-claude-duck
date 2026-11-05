@@ -20,4 +20,6 @@ module.exports = {
   // anything longer is a runaway reply and is cut off in seconds instead of running into the timeout
   LEARNING_MAX_TOKENS: 4096,
   VISION_TIMEOUT_MS: 60000,
+  // Days of screen journal kept on disk (store key journalRetentionDays overrides it)
+  JOURNAL_RETENTION_DAYS: 30,
 };

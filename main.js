@@ -275,6 +275,28 @@ async function confirmEmptyTrash() {
   dialog.showMessageBox({ title: 'Mysthi', message: `Deleted ${removed} note${removed === 1 ? '' : 's'} for good.` });
 }
 
+// The raw steps she recorded (kept 30 days on disk, outside the vault). Lessons and notes are not touched.
+async function confirmClearJournal() {
+  if (!learning) return;
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    title: 'Mysthi',
+    message: "Delete everything Mysthi recorded from your screen?",
+    detail: 'This removes the step journal she makes notes from (it is otherwise kept for 30 days). Steps she has not turned into notes yet are lost. Your lessons and notes in Obsidian stay.',
+    buttons: ['Delete', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+  });
+  if (response !== 0) return;
+  const r = learning.clearJournal();
+  dialog.showMessageBox({
+    title: 'Mysthi',
+    message: r.result === 'busy'
+      ? "She's making notes right now. Try again in a minute."
+      : `Deleted ${r.removed} day${r.removed === 1 ? '' : 's'} of recorded steps.`,
+  });
+}
+
 // Same menu in the menu bar and when you right-click Mysthi
 function appMenuTemplate() {
   return [
@@ -290,6 +312,7 @@ function appMenuTemplate() {
     { type: 'separator' },
     ...learningMenuItems(),
     { label: "Empty Mysthi's trash…", click: () => confirmEmptyTrash() },
+    { label: "Delete Mysthi's screen journal…", click: () => confirmClearJournal() },
     { type: 'separator' },
     { label: 'About', click: () => {
       dialog.showMessageBox({ title: 'Mysthi', message: `Mysthi v${app.getVersion()}`, detail: 'A black cat who lives on your desktop and quietly learns how you work.', icon: path.join(__dirname, 'assets', 'icon.png') });

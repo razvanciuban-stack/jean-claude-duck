@@ -16,6 +16,18 @@ function maskValue(keyQuote, value, mask) {
   return mask;
 }
 
+// CNP control digit: weights 279146358279, sum mod 11 (10 → 1); month 01-12, day 01-31
+function cnpValid(d) {
+  const month = Number(d.slice(3, 5));
+  const day = Number(d.slice(5, 7));
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const w = '279146358279';
+  let sum = 0;
+  for (let i = 0; i < 12; i++) sum += Number(d[i]) * Number(w[i]);
+  const c = sum % 11 === 10 ? 1 : sum % 11;
+  return c === Number(d[12]);
+}
+
 function luhnValid(digits) {
   let sum = 0;
   let double = false;
@@ -143,6 +155,18 @@ const RULES = [
     kind: 'IBAN',
     pattern: /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?\b/giu,
     replace: () => '[IBAN]',
+  },
+  // Romanian personal numeric code (CNP): 13 digits with a valid date and control digit
+  {
+    kind: 'CNP',
+    pattern: /(?<!\d)[1-8]\d{12}(?!\d)/gu,
+    replace: (m) => (cnpValid(m) ? '[CNP]' : undefined),
+  },
+  // PIN / CVV / CVC codes, only when labelled (a bare 3-4 digit number is too common to hide)
+  {
+    kind: 'PIN',
+    pattern: /\b(pin|cvv2?|cvc2?|csc|cod(?:ul)? pin)(\s*(?:code|cod(?:ul)?)?\s*(?:is|este|e|:|=|-)?\s*)(\d{3,8})\b/giu,
+    replace: (m, label, sep) => `${label}${sep}[PIN]`,
   },
   // Payment cards: 13-19 digits, optional space/dash grouping, Luhn-valid only
   {

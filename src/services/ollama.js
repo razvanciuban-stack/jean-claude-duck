@@ -12,8 +12,17 @@ class OllamaJSONError extends Error {
   }
 }
 
+// Only this Mac: an override (MYSTHI_OLLAMA_URL, e.g. another port) must still point at a loopback address,
+// otherwise the default is used. Notes and screen text never go to another machine.
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
 function baseUrl() {
-  return process.env.MYSTHI_OLLAMA_URL || DEFAULT_URL;
+  const override = process.env.MYSTHI_OLLAMA_URL;
+  if (!override) return DEFAULT_URL;
+  try {
+    const u = new URL(override);
+    if (u.protocol === 'http:' && LOOPBACK.has(u.hostname)) return override;
+  } catch { /* not a URL */ }
+  return DEFAULT_URL;
 }
 
 function request(method, path, payload, timeoutMs) {
@@ -143,4 +152,5 @@ function chatStream({ model, messages, options, think, onToken = () => {}, timeo
   });
 }
 
-module.exports = { chat, chatJSON, chatStream, isAvailable, OllamaJSONError };
+module.exports = {
+  baseUrl, chat, chatJSON, chatStream, isAvailable, OllamaJSONError };

@@ -28,13 +28,33 @@ These checks use pattern matching, so they can miss things. They are not a guara
 
 - Apps and websites in `do-not-watch.md` are skipped (see below). It starts with a built-in list of password managers, messaging apps (Messages, WhatsApp, Messenger, Telegram, Discord, Signal) and social media (Facebook, Instagram, Threads, X, TikTok, Snapchat, LinkedIn, Reddit, Pinterest, Tumblr, Bluesky, Mastodon), plus their websites, and Mysthi also tries to recognise banking sites by domain and keywords.
 - Text typed into a field labelled like a password prompt (password, `sudo`, PIN, verification code, token, secret, API key, private key, and similar) is not recorded.
-- Before text is saved, Mysthi tries to replace secrets with placeholders: `[PASSWORD]`, `[API_KEY]`, `[SECRET]`, `[PRIVATE_KEY]`, `[IP]`, `[IBAN]`, `[CARD]`, `[PHONE]`.
+- Before text is saved, Mysthi tries to replace secrets with placeholders: `[PASSWORD]`, `[API_KEY]`, `[SECRET]`, `[PRIVATE_KEY]`, `[IP]`, `[IBAN]`, `[CARD]`, `[PHONE]`, `[CNP]`, `[PIN]`. The same applies to the chat history and to notes you ask her to remember.
 
 Because of this, add any sensitive app or site you use to `do-not-watch.md` yourself.
 
+### Known limits
+
+What the filters above do **not** catch, on purpose or because pattern matching can't tell:
+
+- **Email addresses** and **street addresses** are kept. They are often what a lesson or a note is about ("send it to …"), so hiding them would break notes you ask her to keep.
+- **Short codes without a label:** "PIN 4821" or "CVV: 123" is hidden, but "my code is 4821" or a card expiry like "12/27" is not.
+- **Secrets that look like ordinary words**, for example a password typed into a normal text field ("the wifi is sunshine"), or a key split across lines.
+- **Names and personal details** in window titles or on screen (a chat partner's name in a title bar, for example).
+- **Text on screen** that the vision model reads: it is redacted the same way, with the same limits.
+- **Copies outside the app:** notes are plain files in your vault, so Time Machine, Obsidian Sync (if you turn it on) or any other backup keeps its own copies. Deleting a note in the app does not remove those.
+- **What she infers** from your screen (`lessons/`, `knowledge/`) can be wrong; notes you asked her to remember (`memory/`) are marked as yours and win when they disagree.
+
+The full list of checked examples is in `test/learning/redact.test.js`.
+
+### Network
+
+Mysthi talks to one thing: the local Ollama on `127.0.0.1`. The address can be changed only to another local one (`MYSTHI_OLLAMA_URL`); anything else is ignored. There is no telemetry and no cloud API; a test checks that no code opens other connections.
+
 ### What is stored locally
 
-The redacted step journal and Mysthi's working state live in `~/Library/Application Support/jean-claude-duck/learning`. There is no automatic cleanup: they are kept until you reset (see Troubleshooting).
+The redacted step journal and Mysthi's working state live in `~/Library/Application Support/jean-claude-duck/learning`. Recorded steps are kept for **30 days** and then deleted automatically (to change it, set `journalRetentionDays` in `~/Library/Application Support/jean-claude-duck/config.json`). To delete them all now: Mysthi's menu, **Delete Mysthi's screen journal…**. Your lessons and notes are not touched.
+
+The chat history is kept in the same folder's `config.json` (the last 200 messages, redacted). **Clear** in the chat window empties it.
 
 ### Where your notes go
 
@@ -46,6 +66,8 @@ Everything is plain Markdown in `~/ObsidianVault/mysthi/`:
 | `knowledge/` | Facts Mysthi picked up about your tools and workflow |
 | `log/` | A daily log listing what was learned that day |
 | `reports/` | The weekly report |
+| `memory/` | Notes you asked her to keep ("remember …" / "ține minte …"), marked `source: user-explicit` |
+| `.trash/` | Notes you deleted from the chat, until you choose **Empty Mysthi's trash…** in her menu |
 | `do-not-watch.md` | Your block list |
 
 Tray menu, "Open lessons folder" opens `lessons/`.

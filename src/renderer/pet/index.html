@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
   <style>
     * { margin: 0; padding: 0; }
     html, body { overflow: hidden; background: transparent; width: 180px; height: 180px; position: relative; }
@@ -175,7 +176,8 @@
   <div id="stage"><div id="slime-container"></div><div id="thinking"><i></i><i></i><i></i></div></div>
   <script src="mysthi.js"></script>
   <script>
-    const { ipcRenderer } = require('electron');
+    // Talks to the app only through the narrow bridge in preload.js (no Node in this page)
+    const ipcRenderer = window.pet;
     const container = document.getElementById('slime-container');
     const svg = createMysthiSVG();
     container.appendChild(svg);
